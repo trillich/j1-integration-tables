@@ -1,3 +1,7 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
 
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
@@ -6,7 +10,7 @@
 -- Modified:	
 --	
 -- =============================================
-CREATE PROCEDURE [dbo].[MCM_PostRoomAssign] 
+ALTER PROCEDURE [dbo].[MCM_PostRoomAssign] 
 -- params from INTGR_HOUSING columns:
 	@trans_id as int,
 	@id_num as int,
@@ -40,6 +44,8 @@ BEGIN
 	DECLARE @cur_resid_comm_sts 	AS varchar(4);
 	DECLARE @cur_meal_plan 			AS varchar(4);
 
+    DECLARE @meal_plan_only         AS int; -- might not have any room/dorm info, just a meal plan
+
 	DECLARE @new_loc_cde 			AS varchar(4);
 --	DECLARE @new_bldg_cde 			AS varchar(4);
 --  DECLARE @new_room_assign_sts 	AS varchar(4);
@@ -66,6 +72,7 @@ BEGIN
 	SET @exit_dorm = 0;
 	SET @enter_dorm = 0;
 	SET @resid_commuter_sts = 'R';
+    SET @meal_plan_only = 0;
 
 	BEGIN TRY
 		BEGIN TRANSACTION;
@@ -97,31 +104,41 @@ BEGIN
 
 		IF isnull(@new_loc_cde,'x') = 'x'
 		BEGIN
-			Raiserror('Unknown building code', 16, 1)
+            if @meal_plan > '!'
+            BEGIN
+                set @meal_plan_only = 1
+            END
+            ELSE
+            BEGIN
+                Raiserror('Unknown building location code (and no meal plan)', 16, 1)
+            END
 		END
 
-		-- Building-code sanity check
-		SELECT @new_bldg_num_residents = num_residents
-		FROM SESS_BLDG_MASTER
-		WHERE sess_cde =@sess_cde AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE;
+        if @meal_plan_only = 0
+        BEGIN
+            -- Building-code sanity check
+            SELECT @new_bldg_num_residents = num_residents
+            FROM SESS_BLDG_MASTER
+            WHERE sess_cde =@sess_cde AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE;
 
-		IF isnull( @new_bldg_num_residents, -1 ) = -1
-		BEGIN
-			Raiserror('Building must be defined for session in SESS_BLDG_MASTER', 16, 1)
-		END
+            IF isnull( @new_bldg_num_residents, -1 ) = -1
+            BEGIN
+                Raiserror('Building must be defined for session in SESS_BLDG_MASTER', 16, 1)
+            END
 
-		-- Room-code sanity check
-		SELECT 
-			@new_rm_capacity = room_capacity, 
-			@new_rm_num_residents = num_residents, 
-			@new_rm_num_vacancies = num_vacancies 
-		FROM SESS_ROOM_MASTER
-		WHERE sess_cde =@sess_cde AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE AND room_cde =@ROOM_CDE;
+            -- Room-code sanity check
+            SELECT 
+                @new_rm_capacity = room_capacity, 
+                @new_rm_num_residents = num_residents, 
+                @new_rm_num_vacancies = num_vacancies 
+            FROM SESS_ROOM_MASTER
+            WHERE sess_cde =@sess_cde AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE AND room_cde =@ROOM_CDE;
 
-		if isnull( @new_rm_capacity, -1 ) = -1
-		BEGIN
-			Raiserror('Room must be defined for session in SESS_ROOM_MASTER', 16, 1)
-		END
+            if isnull( @new_rm_capacity, -1 ) = -1
+            BEGIN
+                Raiserror('Room must be defined for session in SESS_ROOM_MASTER', 16, 1)
+            END
+        END
 
 		---------------------- Gather CURRENT dorm info, if any ----------------------
         SET @debugger = 'Gathering prelim info';
@@ -133,24 +150,27 @@ BEGIN
 		FROM STUD_SESS_ASSIGN
 		WHERE sess_cde = @sess_cde AND id_num = @id_num;
 
-		SELECT
-			@cur_loc_cde     = bldg_loc_cde,
-			@cur_bldg_cde    = bldg_cde,
-			@cur_rm_cde      = room_cde,
-			@cur_rm_slot_num = room_slot_num
-		FROM ROOM_ASSIGN
-		WHERE id_num = @id_num and sess_cde = @sess_cde;
+        if @meal_plan_only = 1
+        BEGIN
+            SELECT
+                @cur_loc_cde     = bldg_loc_cde,
+                @cur_bldg_cde    = bldg_cde,
+                @cur_rm_cde      = room_cde,
+                @cur_rm_slot_num = room_slot_num
+            FROM ROOM_ASSIGN
+            WHERE id_num = @id_num and sess_cde = @sess_cde;
 
-		SELECT
-			@cur_rm_num_residents = num_residents,
-			@cur_rm_num_vacancies = num_vacancies 
-		FROM SESS_ROOM_MASTER
-		WHERE sess_cde =@sess_cde AND bldg_loc_cde =@cur_loc_cde AND bldg_cde =@cur_bldg_cde AND room_cde =@cur_rm_cde;
+            SELECT
+                @cur_rm_num_residents = num_residents,
+                @cur_rm_num_vacancies = num_vacancies 
+            FROM SESS_ROOM_MASTER
+            WHERE sess_cde =@sess_cde AND bldg_loc_cde =@cur_loc_cde AND bldg_cde =@cur_bldg_cde AND room_cde =@cur_rm_cde;
 
-		SELECT
-			@cur_bldg_num_residents = num_residents 
-		FROM SESS_BLDG_MASTER
-		WHERE sess_cde =@sess_cde AND bldg_loc_cde =@cur_loc_cde AND bldg_cde =@cur_bldg_cde;
+            SELECT
+                @cur_bldg_num_residents = num_residents 
+            FROM SESS_BLDG_MASTER
+            WHERE sess_cde =@sess_cde AND bldg_loc_cde =@cur_loc_cde AND bldg_cde =@cur_bldg_cde;
+        END
 
 		------------------------------------------------
 		------------------- HOUSING --------------------
@@ -193,7 +213,8 @@ BEGIN
 			END
 			ELSE IF @bldg_cde = @cur_bldg_cde and @room_cde = @cur_rm_cde
 			BEGIN -- same bldg/room as always, no changes to make
-				select 1;
+				set @exit_dorm = 0;
+                set @enter_dorm = 0;
 			END
 			ELSE
 			BEGIN -- bldg/room has CHANGED
@@ -451,6 +472,30 @@ BEGIN
 			WHERE sess_cde =@SESS_CDE AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE AND room_cde =@ROOM_CDE;
 
 		END
+        ELSE IF @meal_plan_only = 1
+        BEGIN
+            -- not entering dorm, but we do have a meal plan anyway
+
+            IF isnull(@cur_resid_comm_sts,'') = '' -- no current stud_sess_assign
+            BEGIN
+				INSERT INTO STUD_SESS_ASSIGN ( sess_cde, id_num, job_name, 
+					room_assign_sts, resid_commuter_sts, meal_plan, available_as_rmmate, 
+					override_phone, user_name, job_time ) 
+				VALUES ( @sess_cde, @id_num, @job,
+					'U', 'C', @meal_plan, 'U', -- not roommate material?
+					'N', @user, getdate());
+            END
+            ELSE
+            BEGIN
+                UPDATE STUD_SESS_ASSIGN 
+                SET meal_plan = @meal_plan , 
+                    user_name = @user , 
+                    job_name = @job , 
+                    job_time = getdate() 
+                WHERE sess_cde = @sess_cde AND id_num =@id_num;
+            END
+
+        END
 
         SET @debugger = 'Committing';
 		PRINT 'Catch has not been triggered!';
@@ -486,3 +531,4 @@ BEGIN
 REVERT
 
 END
+GO
