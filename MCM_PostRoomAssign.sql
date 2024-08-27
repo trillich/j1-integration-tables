@@ -25,7 +25,8 @@ ALTER PROCEDURE [dbo].[MCM_PostRoomAssign]
 	@stat as varchar(1), -- A(ssignment) or R(emoval)
 	@cancel_dte AS datetime = null,
 	@cancel_rsn AS varchar(30) = null,
-	@outtransid as int OUTPUT
+	@outtransid as int OUTPUT,
+	@trancntmsg as varchar(500) OUTPUT
 
 WITH EXECUTE AS 'dbo'
 AS
@@ -33,51 +34,61 @@ BEGIN
 	SET XACT_ABORT ON;
 	SET NOCOUNT ON;
 
-	DECLARE @Message VARCHAR(8000) = ''; 
-	DECLARE @cur_loc_cde 			AS varchar(4);
-	DECLARE @cur_bldg_cde 			AS varchar(4);
-	DECLARE @cur_rm_cde 			AS varchar(4);
-	DECLARE @cur_rm_slot_num 		AS int;
-	DECLARE @cur_rm_num_residents 	AS int;
-	DECLARE @cur_rm_num_vacancies 	AS int;
-	DECLARE @cur_bldg_num_residents AS int;
-	DECLARE @cur_resid_comm_sts 	AS varchar(4);
-	DECLARE @cur_meal_plan 			AS varchar(4);
-
-    DECLARE @meal_plan_only         AS int; -- might not have any room/dorm info, just a meal plan
-
-	DECLARE @new_loc_cde 			AS varchar(4);
---	DECLARE @new_bldg_cde 			AS varchar(4);
---  DECLARE @new_room_assign_sts 	AS varchar(4);
-	DECLARE @new_room_slot 			AS int;
-	DECLARE @new_rm_capacity 		AS int;
-	DECLARE @new_rm_num_residents 	AS int;
-	DECLARE @new_rm_num_vacancies 	AS int;
-	DECLARE @new_bldg_num_residents AS int;
-
-	DECLARE @room_change_reason     AS varchar(3);
-	DECLARE @resid_commuter_sts		AS char(1);
-	DECLARE @exit_dorm				AS bit; -- student leaving?
-	DECLARE @enter_dorm 			AS bit; -- student entering?
-
-	DECLARE @user					AS varchar(513);
-	DECLARE @job					AS varchar(30);
-    DECLARE @debugger               AS varchar(25);
-
-	--capture the actual user executing the SP
-	SET @outtransid = @trans_id;
-	SET @user = ORIGINAL_LOGIN();
-	SET @job = 'MCM_PostRoomAssign';
-	-- Defaults:
-	SET @exit_dorm = 0;
-	SET @enter_dorm = 0;
-	SET @resid_commuter_sts = 'R';
-    SET @meal_plan_only = 0;
-
 	BEGIN TRY
 		BEGIN TRANSACTION;
 
-        SET @debugger = 'Validation';
+		SET @trancntmsg = 'Implicit Transaction on? : ' + IIF(@@OPTIONS & 2 = 0, 'OFF', 'ON') + ' : Tran cnt after Begin Tran: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+
+		DECLARE @Message VARCHAR(8000) = ''; 
+		DECLARE @cur_loc_cde 			AS varchar(4);
+		DECLARE @cur_bldg_cde 			AS varchar(4);
+		DECLARE @cur_rm_cde 			AS varchar(4);
+		DECLARE @cur_rm_slot_num 		AS int;
+		DECLARE @cur_rm_num_residents 	AS int;
+		DECLARE @cur_rm_num_vacancies 	AS int;
+		DECLARE @cur_bldg_num_residents AS int;
+		DECLARE @cur_resid_comm_sts 	AS varchar(4);
+		DECLARE @cur_meal_plan 			AS varchar(4);
+
+		DECLARE @meal_plan_only         AS int; -- might not have any room/dorm info, just a meal plan
+        DECLARE @cancelling             AS int;
+
+		DECLARE @new_loc_cde 			AS varchar(4);
+	--	DECLARE @new_bldg_cde 			AS varchar(4);
+	--  DECLARE @new_room_assign_sts 	AS varchar(4);
+		DECLARE @new_room_slot 			AS int;
+		DECLARE @new_rm_capacity 		AS int;
+		DECLARE @new_rm_num_residents 	AS int;
+		DECLARE @new_rm_num_vacancies 	AS int;
+		DECLARE @new_bldg_num_residents AS int;
+
+		DECLARE @room_change_reason     AS varchar(3);
+		DECLARE @resid_commuter_sts		AS char(1);
+		DECLARE @exit_dorm				AS bit; -- student leaving?
+		DECLARE @enter_dorm 			AS bit; -- student entering?
+
+		DECLARE @user					AS varchar(513);
+		DECLARE @job					AS varchar(30);
+		DECLARE @debugger               AS varchar(250);
+		DECLARE @msg                    AS varchar(500);
+
+		--capture the actual user executing the SP
+		SET @outtransid = @trans_id;
+		SET @user = ORIGINAL_LOGIN();
+		SET @job = 'MCM_PostRoomAssign';
+		-- Defaults:
+		SET @exit_dorm = 0;
+		SET @enter_dorm = 0;
+		SET @resid_commuter_sts = 'R';
+		SET @meal_plan_only = 0;
+        SET @cancelling = 0;
+		SET @trancntmsg = @trancntmsg + ' : Tran cnt Start: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+
+		IF @@TRANCOUNT > 1 AND XACT_STATE() = 1
+		BEGIN
+			COMMIT TRANSACTION;
+			SET @trancntmsg = @trancntmsg + ' : Tran cnt > 1 at beginning of execution so now committing: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+		END
 
 		---------------------------------------Preliminary Data Validation--------------------------------------------
 		-- Gotta have a student id & session code
@@ -90,12 +101,6 @@ BEGIN
 		BEGIN
 			Raiserror( 'Session code is required!', 16, 1 );
 		END
-
-		-- FIXME:
-		-- On CX, Perl script tests for bldg_cde="" and when true, sets student to COMMUTER.
-		-- if bldg_code is ever blank then the below would find no data
-		-- ...however, in 2 years of THD assignment* files, there's NEVER been an
-		-- empty bldg_cde!
 
 		-- Location-code sanity check
 		SELECT @new_loc_cde = loc_cde 
@@ -110,9 +115,14 @@ BEGIN
             END
             ELSE
             BEGIN
-                Raiserror('Unknown building location code (and no meal plan)', 16, 1)
+                Raiserror('Unknown building location code -- and no meal plan', 16, 1)
             END
 		END
+
+        IF @cancel_rsn > '!' or @cancel_dte > cast('1/1/1970' as date)
+        BEGIN
+            SET @cancelling = 1
+        END
 
         if @meal_plan_only = 0
         BEGIN
@@ -143,15 +153,18 @@ BEGIN
 		---------------------- Gather CURRENT dorm info, if any ----------------------
         SET @debugger = 'Gathering prelim info';
 
-
 		SELECT 
 			@cur_resid_comm_sts = resid_commuter_sts, 
 			@cur_meal_plan = meal_plan
 		FROM STUD_SESS_ASSIGN
 		WHERE sess_cde = @sess_cde AND id_num = @id_num;
 
-        if @meal_plan_only = 1
+        -- set @msg = concat(@debugger, ' mpo:', @meal_plan_only, ', id=[', isnull(@id_num,'?'), '], sess=[', isnull(@sess_cde,'?'), ']');
+        --PRINT @msg;
+
+        if @meal_plan_only = 0
         BEGIN
+
             SELECT
                 @cur_loc_cde     = bldg_loc_cde,
                 @cur_bldg_cde    = bldg_cde,
@@ -159,6 +172,9 @@ BEGIN
                 @cur_rm_slot_num = room_slot_num
             FROM ROOM_ASSIGN
             WHERE id_num = @id_num and sess_cde = @sess_cde;
+
+            -- set @msg = concat(@debugger, 'cur_bldg=[', isnull(@cur_bldg_cde,'?'), '], cur_rm=[', isnull(@cur_rm_cde,'?'), ']');
+            --PRINT @msg;
 
             SELECT
                 @cur_rm_num_residents = num_residents,
@@ -178,7 +194,7 @@ BEGIN
 
         SET @debugger = 'Determining status';
 
-		if isnull(@bldg_cde, '') = ''
+		if isnull(@bldg_cde, '') = '' or @cancelling > 0
 		BEGIN --------- no incoming bldg_cde (commuter or withdrawn)
 
 			if isnull(@cur_bldg_cde,'') = ''
@@ -194,7 +210,7 @@ BEGIN
 				 */
 				set @resid_commuter_sts = 'C' -- incoming status
 				set @room_change_reason = 'COM' -- FIXME the EXP/FIN/HLT/INC/REP codes don't have a value for 'commuter'?
-				if @cancel_dte > cast('1/1/1970' as date) -- we just need to know when it's a reasonable date
+				if @cancelling > 0 -- we just need to know when it's a reasonable date
 				begin
 					SET @resid_commuter_sts = 'W' -- FIXME what is the code for withdraw/cancel/leave-of-absence
 					SET @room_change_reason = @cancel_rsn
@@ -209,12 +225,16 @@ BEGIN
 
 			if isnull(@cur_bldg_cde,'') = ''
 			BEGIN -- was commuter, now resident
-				set @enter_dorm = 1;
+                set @enter_dorm = 1;
 			END
 			ELSE IF @bldg_cde = @cur_bldg_cde and @room_cde = @cur_rm_cde
-			BEGIN -- same bldg/room as always, no changes to make
-				set @exit_dorm = 0;
-                set @enter_dorm = 0;
+			BEGIN -- same bldg/room as always, but are we cancelling?
+				if @cancelling = 0
+                BEGIN
+                    -- same room and not being cancelled, so nothing to do:
+                    set @exit_dorm = 0;
+                    set @enter_dorm = 0;
+                END
 			END
 			ELSE
 			BEGIN -- bldg/room has CHANGED
@@ -225,10 +245,8 @@ BEGIN
 			END
 		END
 
---		DECLARE @msg varchar(100);
---		SET @msg = 'exit_dorm=' + CAST(@exit_dorm AS char(1)) + ' enter_dorm=' + CAST(@enter_dorm AS char(1));
---		EXEC dbo.MCM_Error_Handler @msg, 0, 'THD';
-
+		-- SET @msg = concat('exit_dorm=', @exit_dorm, ', enter_dorm=', @enter_dorm);
+		-- PRINT @msg;
 		-------------------------------------------------
 		-- Here's where the student leaves a dorm room --
 		-------------------------------------------------
@@ -331,12 +349,12 @@ BEGIN
 		BEGIN -- do ENTER_DORM activity
 
             SET @debugger = 'Entering dorm';
-			PRINT 'enter_dorm = 1'
+			-- PRINT 'enter_dorm = 1'
 
 			IF isnull(@cur_resid_comm_sts,'') <> ''
 			BEGIN -- assignment already exists in STUD_SESS_ASSIGN
 
-				PRINT 'cur_resid_comm_sts <> '''''
+				-- PRINT 'cur_resid_comm_sts <> '''''
 
 				UPDATE STUD_SESS_ASSIGN
 				SET resid_commuter_sts =@resid_commuter_sts,
@@ -349,7 +367,7 @@ BEGIN
 			ELSE
 			BEGIN -- no assignment found in STUD_SESS_ASSIGN
 
-				PRINT 'cur_resid_comm_sts is empty'
+				-- PRINT 'cur_resid_comm_sts is empty'
 
 				INSERT INTO STUD_SESS_ASSIGN ( sess_cde, id_num, job_name, 
 					room_assign_sts, resid_commuter_sts, meal_plan, available_as_rmmate, 
@@ -377,6 +395,9 @@ BEGIN
 					0, 0, null, null, 0, 0, 0, 0, 0, 0, 0, 0);
 			END
 
+            -- set @msg = @debugger + ' dorm=[' + isnull(@bldg_cde,'?') + '/' + isnull(@cur_bldg_cde,'?') + '], room=[' + isnull(@room_cde,'?') + '/' + isnull(@cur_rm_cde,'?') + ']';
+            -- PRINT @msg;
+
 			SELECT 
 				@new_room_slot = min(ROOM_SLOT_NUM) 
 			FROM room_assign 
@@ -387,7 +408,7 @@ BEGIN
 				Raiserror('No unassigned slot for room in room_assign', 16, 1)
 			END
 
-			PRINT 'got new_room_slot ' + cast(@new_room_slot AS varchar)
+			-- PRINT 'got new_room_slot ' + cast(@new_room_slot AS varchar)
 
 			UPDATE STUD_SESS_ASSIGN
 			SET room_assign_sts = 'A',
@@ -426,7 +447,7 @@ BEGIN
 			WHILE @@FETCH_STATUS = 0
 			BEGIN
 
-                print concat('stud_roommates: ', @sess_cde, ' ', cast(@id_num as varchar), '/', cast(@roomie_id as varchar), ': @', @bldg_cde, @room_cde);
+                -- print concat('stud_roommates: ', @sess_cde, ' ', cast(@id_num as varchar), '/', cast(@roomie_id as varchar), ': @', @bldg_cde, @room_cde);
 
 				INSERT INTO stud_roommates ( sess_cde, id_num, req_actual_flag, roommate_id, bldg_loc_cde, bldg_cde, room_cde, user_name, job_name, job_time ) 
 				VALUES ( @SESS_CDE, @ID_NUM, 'A', @roomie_id, @new_loc_cde, @BLDG_CDE, @ROOM_CDE, @user, @job, getdate() );
@@ -498,9 +519,10 @@ BEGIN
         END
 
         SET @debugger = 'Committing';
-		PRINT 'Catch has not been triggered!';
-
+		-- PRINT 'Catch has not been triggered!';
+		--SET @trancntmsg = @trancntmsg + ' : Tran cnt before Commit: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		COMMIT TRANSACTION;
+		--SET @trancntmsg = @trancntmsg + ' : Tran cnt after Commit: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 
 	END TRY
 	BEGIN CATCH
@@ -513,14 +535,19 @@ BEGIN
 
 		SELECT @errorseverity = ERROR_SEVERITY(), @errorstate = ERROR_STATE();
 
+		--SET @trancntmsg = @trancntmsg + ' : Tran cnt enter Catch: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		IF (XACT_STATE()) = -1
 		BEGIN
 			ROLLBACK TRANSACTION;
+			--SET @trancntmsg = @trancntmsg + ' : Tran cnt in Catch after Rollback: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		END
 		IF (XACT_STATE()) = 1
 		BEGIN
 			COMMIT TRANSACTION;
+			--SET @trancntmsg = @trancntmsg + ' : Tran cnt in Catch after Commit: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		END
+		--SET @trancntmsg = @trancntmsg + ' : Tran cnt in Catch before log: ' + cast(@@TRANCOUNT as char(2))+ ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+		SET @Message = @Message + ' : ' + @trancntmsg;
 
 		exec MCM_Error_Handler @Message, @id_num, @job;
 		RAISERROR(N'%s', @errorseverity, @errorstate, @Message);
