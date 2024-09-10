@@ -1,38 +1,33 @@
-USE j1conv
-
-go
-
--- ==============================================================================================
--- Author:		Will Trillich
--- Create date: 08/15/2024
--- Description:	Extracting MEDICAT data for pushing to their remote system
--- Modified:
--- ==============================================================================================
-
-drop procedure if exists [dbo].[MCM_GetMedicat];
-
-CREATE PROCEDURE [dbo].[MCM_GetMedicat]
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROCEDURE [dbo].[MCM_GetMedicat]
 
 WITH EXECUTE AS 'dbo'
 AS
+-- =============================================
+-- Author:		Will Trillich (Serensoft)	
+-- Create date: 7/29/2024...9/9/2024
+-- Description:	Generate MEDICAT export data
+-- Modified:	
+--	
+-- =============================================
 BEGIN
 
-       declare @cterm as varchar(6)
-       declare @prevyr as char(4)
-       declare @curyr as char(4)
-       declare @nxtyr as char(4)
-       set nocount on;
+        declare @cterm as varchar(6)
+        declare @prevyr as int
+        declare @curyr as int
+        declare @nxtyr as int
+        set nocount on;
 
-  	select
-        @cterm = dbo.MCM_FN_CALC_TRM('C'),
-        @prevyr = left(dbo.MCM_FN_CALC_TRM('P'), 4), 
-        @curyr = left(dbo.MCM_FN_CALC_TRM('C'), 4),
-        @nxtyr = left(dbo.MCM_FN_CALC_TRM('N'), 4);
+        select @cterm = dbo.MCM_FN_CALC_TRM('C');
+        set @curyr = cast(left(@cterm,4) as int);
+        set @prevyr = @curyr - 1;
+        set @nxtyr = @curyr + 1;
 
-
-       SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
---    print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
-
+        SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
+        -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
 
 WITH loa
      AS (SELECT DISTINCT x.id_num,
@@ -49,7 +44,7 @@ WITH loa
      AS (SELECT DISTINCT id_num
          FROM   student_crs_hist
          WHERE  stud_div IN ( 'UG', 'GR' )
-                AND yr_cde IN ( 2023, 2024, 2025 )
+                AND yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND transaction_sts IN ( 'P', 'H', 'C', 'D' )),
  alt_ctc
      AS (SELECT id_num,
@@ -73,7 +68,7 @@ WITH loa
                 LEFT JOIN reg_stu r
                        ON ( c.id_num = r.id_num )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
-                AND c.yr_cde IN ( 2023, 2024, 2025 )
+                AND c.yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND c.stage IN ( 'DEPT', 'NMDEP' )
                 AND c.cur_candidacy = 'Y'
                 AND r.id_num IS NULL),
@@ -91,7 +86,7 @@ WITH loa
                 am.state,
                 am.postalcode                           ZIP,
                 pm2.phone                               HOME_PHONE,
-                'FIXME'                                 WORK_PHONE,
+                ''                                      WORK_PHONE,
                 pm.phone                                Mobile_Phone,
                 CONVERT(VARCHAR(10), bm.birth_dte, 101) Date_Of_Birth,
                 CASE
@@ -207,7 +202,7 @@ WITH loa
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
                 alt_ctc.username                        NETWORK_USER_NAME,
-                'FIXME'                                 MACKCARD_ID,
+                bmu.card_no                             MACKCARD_ID,
                 --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
                 sch.table_desc                          Subprogram,
@@ -227,12 +222,16 @@ WITH loa
                   ON nm.id_num = bm.id_num
                 JOIN reg_stu rs
                   ON nm.id_num = rs.id_num
+                JOIN student_master sm WITH (nolock)
+                       ON ( sm.id_num = nm.id_num )
+                LEFT JOIN BIOGRAPH_MASTER_UDF bmu
+                  ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num
-                          AND ssa.sess_cde = 'FA2024'
+                          AND ssa.sess_cde = @cterm
                 LEFT JOIN room_assign ra WITH (nolock)
                        ON nm.id_num = ra.id_num
-                          AND ra.sess_cde = 'FA2024'
+                          AND ra.sess_cde = @cterm
                 LEFT JOIN nameaddressmaster nam WITH (nolock)
                        ON nm.id_num = nam.id_num
                           AND nam.addr_cde = '*LHP' --*LHP address
@@ -276,9 +275,6 @@ WITH loa
                             AND dh.div_cde = sdm.div_cde
                             AND sdm.is_student_div_active = 'Y' )
                 --***JON - need this to ensure current degree_history is aligned with the current student_div_mast record
-                LEFT JOIN student_master sm WITH (nolock)
-                       ON ( sm.id_num = nm.id_num )
-                -- AND sm.cur_stud_div = sdm.div_cde ) --***JON - Not necessary since student_master is a single record per student
                 LEFT JOIN mcm_latest_ethnicrace_detail ethnic WITH (nolock)
                        ON ( nm.id_num = ethnic.id_num )
                 LEFT JOIN cm_emerg_contacts emerg WITH (nolock)
@@ -440,7 +436,7 @@ WITH loa
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
                 alt_ctc.username                        NETWORK_USER_NAME,
-                'FIXME'                                 MACKCARD_ID,
+                bmu.card_no                             MACKCARD_ID,
                 --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
                 sch.table_desc                          Subprogram,
@@ -464,12 +460,14 @@ WITH loa
                   ON nm.id_num = can.id_num
                 JOIN alt_ctc WITH (nolock)
                   ON ( nm.id_num = alt_ctc.id_num )
+                LEFT JOIN BIOGRAPH_MASTER_UDF bmu
+                  ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num
-                          AND ssa.sess_cde = 'FA2024'
+                          AND ssa.sess_cde = @cterm
                 LEFT JOIN room_assign ra WITH (nolock)
                        ON nm.id_num = ra.id_num
-                          AND ra.sess_cde = 'FA2024'
+                          AND ra.sess_cde = @cterm
                 LEFT JOIN nameaddressmaster nam WITH (nolock)
                        ON nm.id_num = nam.id_num
                           AND nam.addr_cde = '*LHP' --*LHP address
@@ -544,7 +542,7 @@ WITH loa
                        ON ( dh.concentration_1 = conc1.conc_cde )
                 LEFT JOIN concentration_def conc2 WITH (nolock)
                        ON ( dh.concentration_2 = conc2.conc_cde ))
-
+-- end of CTE specifications
 SELECT *
 FROM   curstu
 UNION
@@ -558,5 +556,4 @@ order by other_id
 END
 
 ;
-
-exec MCM_GetMedicat; -- 2024-08-18
+GO
