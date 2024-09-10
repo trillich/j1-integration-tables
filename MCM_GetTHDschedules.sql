@@ -66,10 +66,17 @@ as (
         secm.SUBTERM_CDE,
         secm.DIVISION_CDE,
         secm.CRS_CDE,
-        secm.CRS_TITLE 
+        secm.CRS_TITLE,
+        inm.FIRST_NAME,
+        inm.LAST_NAME,
+        iacm.AlternateContact email
     from section_master secm with (nolock)
         left join TABLE_DETAIL td with (nolock)
         on secm.CRS_TYPE = td.TABLE_VALUE AND td.COLUMN_NAME = 'crs_meeting_type'
+        left join NameMaster inm
+        on secm.LEAD_INSTRUCTR_ID = inm.ID_NUM
+        left join AlternateContactMethod iacm
+        on secm.LEAD_INSTRUCTR_ID = iacm.ID_NUM and iacm.ADDR_CDE='*EML'
     where
         secm.YR_CDE = @curyr and secm.TRM_CDE = left(@cterm,2)
 ),
@@ -104,8 +111,9 @@ select
     s.thursday      meets_thursday,
     s.friday        meets_friday,
     s.saturday      meets_saturday,
-    ''              instructor_name,
-    ''              instructor_email
+    c.FIRST_NAME + ' ' + c.LAST_NAME
+                    instructor_name,
+    c.email         instructor_email
 FROM
     cte_sched s
     join
@@ -115,6 +123,7 @@ FROM
     cte_course_types c
     on s.TRM_CDE = c.TRM_CDE and s.YR_CDE = c.YR_CDE and s.CRS_CDE = c.CRS_CDE
 -- where s.thursday < 0
+    ;
 
     set nocount off;
     REVERT

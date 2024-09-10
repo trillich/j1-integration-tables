@@ -16,37 +16,39 @@ AS
 BEGIN
 
         declare @cterm as varchar(6)
-        declare @prevyr as int
         declare @curyr as int
-        declare @nxtyr as int
         set nocount on;
 
         select @cterm = dbo.MCM_FN_CALC_TRM('C');
-        set @curyr = cast(left(@cterm,4) as int);
-        set @prevyr = @curyr - 1;
-        set @nxtyr = @curyr + 1;
+        -- set @cterm = '2024FA';
+        -- select @cterm;
+
+        SET @curyr = cast(left(@cterm,4) as int);
 
         SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
         -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
 
-WITH loa
-     AS (SELECT DISTINCT x.id_num,
-                         x.leave_begin_dte,
-                         x.absence_cde,
-                         d.absence_desc
+WITH
+cte_loa
+     AS (SELECT DISTINCT x.ID_NUM,
+                         x.LEAVE_BEGIN_DTE,
+                         x.LEAVE_END_DTE,
+                         x.ABSENCE_CDE,
+                         d.ABSENCE_DESC
          FROM   leaveofabsence x
                 LEFT JOIN absence_def d WITH (nolock)
                        ON ( x.absence_cde = d.absence_cde )
          WHERE  ( x.leave_begin_dte <= Getdate()
                   AND ( x.leave_end_dte IS NULL
                          OR x.leave_end_dte > Getdate() ) )),
- reg_stu
+cte_reg_stu
      AS (SELECT DISTINCT id_num
          FROM   student_crs_hist
          WHERE  stud_div IN ( 'UG', 'GR' )
-                AND yr_cde IN ( @prevyr, @curyr, @nxtyr )
-                AND transaction_sts IN ( 'P', 'H', 'C', 'D' )),
- alt_ctc
+                AND YR_CDE = @curyr
+                AND TRM_CDE = left(@cterm,2)
+                AND transaction_sts IN ( 'H', 'C', 'D' )),
+cte_alt_ctc
      AS (SELECT id_num,
                 LEFT(acm.alternatecontact, Charindex('@', acm.alternatecontact)
                                            - 1)
@@ -54,13 +56,14 @@ WITH loa
          FROM   alternatecontactmethod acm WITH (nolock)
          WHERE  acm.addr_cde = '*EML'
                 AND acm.alternatecontact LIKE '%@merrimack.edu'),
- peml_ctc
+cte_peml_ctc
      AS (SELECT id_num,
                 acm.alternatecontact email
          FROM   alternatecontactmethod acm WITH (nolock)
          WHERE  acm.addr_cde = 'PEML'),
- can
-     AS (SELECT c.id_num,
+cte_can
+     AS (
+        SELECT c.id_num,
                 -- candidacy_type,
                 -- CASE c.candidacy_type
                 --   WHEN 'F' THEN 1
@@ -70,21 +73,28 @@ WITH loa
                 -- hist_stage_dte,
                 CONVERT(VARCHAR(10), c.hist_stage_dte, 101) enrollment_date
          FROM   candidacy c
-                LEFT JOIN reg_stu r
-                       ON ( c.id_num = r.id_num )
+                LEFT JOIN STUDENT_MASTER s
+                       ON ( c.id_num = s.ID_NUM )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
-                AND c.yr_cde IN ( @prevyr, @curyr, @nxtyr )
-                AND c.stage IN ( 'DEPT', 'NMDEP' )
-                AND c.cur_candidacy = 'Y'
-                AND r.id_num IS NULL),
- sport
+                AND
+                (
+                    c.YR_CDE = @curyr
+                AND c.TRM_CDE = left(@cterm,2)
+                AND c.STAGE IN ( 'DEPT', 'NMDEP' )
+                AND c.CUR_CANDIDACY = 'Y'
+                )
+                AND s.id_num IS NULL
+                )
+-- select count(*) from cte_can;
+,
+cte_sport
     AS (
         SELECT id_num,count(*) ct
         from SPORTS_TRACKING
         where yr_cde=@curyr and TRM_CDE=left(@cterm,2)
         group by id_num
     ),
- holds
+cte_holds
     as (
         SELECT a.ID_NUM, a.HoldDesc1, b.HoldStart1, a.HoldDesc2, b.HoldStart2, a.HoldDesc3, b.HoldStart3
         FROM (
@@ -121,11 +131,10 @@ WITH loa
                 ) b on a.ID_NUM = b.ID_NUM
 
     ),
- curstu
+cte_curstu
      AS (SELECT 'CURRENT'                               grp,
-                nm.id_num                               PATIENT_CONTROL_ID,
+                nm.id_num                               stu_id,
                 bm.ssn,
-                nm.id_num                               OTHER_ID,
                 LEFT(nm.last_name, 30)                  last_name,
                 LEFT(nm.first_name, 20)                 first_name,
                 LEFT(nm.middle_name, 1)                 middle_name,
@@ -148,7 +157,7 @@ WITH loa
                   ELSE 2 --eligible
                 END                                     Eligibility,
                 CASE
-                  WHEN loa.id_num IS NULL THEN 0
+                  WHEN cte_loa.id_num IS NULL THEN 0
                   ELSE 1
                 END                                     Inactive,
                 CASE
@@ -184,20 +193,6 @@ WITH loa
                 CONVERT(VARCHAR(10), COALESCE(sdm.re_entry_dte, sdm.entry_dte),
                 101)
                                                         ENROLLMENT_DATE,
-                CASE
-                  WHEN dh.div_cde = 'UG'
-                       AND sdm.trm_hrs_attempt >= 12 THEN 3
-                  WHEN dh.div_cde = 'UG'
-                       AND sdm.trm_hrs_attempt > 0 THEN 2
-                  WHEN dh.div_cde = 'UG' THEN 1
-                  WHEN dh.div_cde = 'GR'
-                       AND sdm.trm_hrs_attempt >= 8 THEN 3
-                  WHEN dh.div_cde = 'GR'
-                       AND sdm.trm_hrs_attempt > 0 THEN 2
-                  WHEN dh.div_cde = 'GR' THEN 1
-                  WHEN dh.div_cde = 'CE' THEN 1
-                  ELSE 0
-                END                                     STUDENT_STATUS,
                 sch.table_desc                          SCHOOL,
                 --JON**************************************
                 CASE
@@ -218,7 +213,7 @@ WITH loa
                 LEFT(am.addr_line_2, 40)                AS ADDRESS_LINE_2,
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
-                alt_ctc.username                        NETWORK_USER_NAME,
+                cte_alt_ctc.username                        NETWORK_USER_NAME,
                 bmu.card_no                             MACKCARD_ID,
                 --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
@@ -230,9 +225,16 @@ WITH loa
                 conc2.conc_desc                         CONC2,
                 min1.major_minor_desc                   MINOR1,
                 min2.major_minor_desc                   MINOR2,
-                'FIXME'                                 ACADEMIC_STATUS,
-                loa.absence_desc                        LEAVE_REASON,
-                loa.leave_begin_dte                     LEAVE_DATE,
+                CASE 
+                    WHEN (getdate() < cte_loa.LEAVE_END_DTE or cte_loa.LEAVE_END_DTE is null)
+                     AND dh.EXIT_REASON IS NULL
+                    THEN 'LA' 
+                    WHEN dh.EXIT_REASON IS NOT NULL
+                    THEN 'WD'
+                    ELSE sm.CUR_ACAD_PROBATION
+                END                                     ACADEMIC_STATUS,
+                cte_loa.absence_desc                    LEAVE_REASON,
+                cte_loa.leave_begin_dte                 LEAVE_DATE,
                 bm.SelfGenderIdentificationDefinitionAppID ident_gender,
                 nm.preferred_name,
                 cdt.COHORT_CDE,
@@ -251,11 +253,11 @@ WITH loa
                 pm.PHONE
          -- -- -- -- -- -- -- -- -- -- -- -- --
          FROM   namemaster nm WITH (nolock)
-                JOIN biograph_master bm WITH (nolock)
+                left JOIN biograph_master bm WITH (nolock)
                   ON nm.id_num = bm.id_num
-                JOIN reg_stu rs with (nolock)
+                inner JOIN cte_reg_stu rs with (nolock)
                   ON nm.id_num = rs.id_num
-                JOIN student_master sm WITH (nolock)
+                inner JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
                 LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
                   ON (bm.ID_NUM = bmu.ID_NUM)
@@ -297,8 +299,8 @@ WITH loa
                           AND npm2.phonetypedefappid = -2 --home phone
                 LEFT JOIN phonemaster pm2 WITH (nolock)
                        ON npm2.phonemasterappid = pm2.appid
-                LEFT JOIN loa
-                       ON nm.id_num = loa.id_num
+                LEFT JOIN cte_loa
+                       ON nm.id_num = cte_loa.id_num
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
                             AND dh.cur_degree = 'Y' )
@@ -313,8 +315,8 @@ WITH loa
                 LEFT JOIN cm_emerg_contacts emerg WITH (nolock)
                        ON ( nm.id_num = emerg.id_num
                             AND emerg.emrg_seq_num = 1 )
-                LEFT JOIN alt_ctc WITH (nolock)
-                       ON ( nm.id_num = alt_ctc.id_num )
+                LEFT JOIN cte_alt_ctc WITH (nolock)
+                       ON ( nm.id_num = cte_alt_ctc.id_num )
                 LEFT JOIN division_def dd WITH (nolock)
                        ON ( sdm.div_cde = dd.div_cde )
                 LEFT JOIN major_minor_def maj1 WITH (nolock)
@@ -341,11 +343,10 @@ WITH loa
                 LEFT JOIN COHORT_DEFINITION cdt
                        ON ( sdm.COHORT_DEFINITION_APPID = cdt.APPID )
 ),
- newstu
+ cte_newstu
      AS (SELECT 'NEW'                                   grp,
-                nm.id_num                               PATIENT_CONTROL_ID,
+                nm.id_num                               stu_id,
                 bm.ssn,
-                nm.id_num                               OTHER_ID,
                 LEFT(nm.last_name, 30)                  last_name,
                 LEFT(nm.first_name, 20)                 first_name,
                 LEFT(nm.middle_name, 1)                 middle_name,
@@ -368,7 +369,7 @@ WITH loa
                   ELSE 2 --eligible
                 END                                     Eligibility,
                 CASE
-                  WHEN loa.id_num IS NULL THEN 0
+                  WHEN cte_loa.id_num IS NULL THEN 0
                   ELSE 1
                 END                                     Inactive,
                 CASE
@@ -400,25 +401,11 @@ WITH loa
                 --   WHEN sm.current_class_cde IN ( 'GR', 'GN' ) THEN 5
                 --   ELSE 6 -- 'NM' or 'CE' or NULL
                 -- END                                     CLASS,
-                -- can.class,
+                -- cte_can.class,
                 sm.current_class_cde,
                 -- CONVERT(VARCHAR(10), COALESCE(sdm.re_entry_dte, sdm.entry_dte), 101)
                 --                                         ENROLLMENT_DATE,
-                can.enrollment_date,
-                CASE
-                  WHEN dh.div_cde = 'UG'
-                       AND sdm.trm_hrs_attempt >= 12 THEN 3
-                  WHEN dh.div_cde = 'UG'
-                       AND sdm.trm_hrs_attempt > 0 THEN 2
-                  WHEN dh.div_cde = 'UG' THEN 1
-                  WHEN dh.div_cde = 'GR'
-                       AND sdm.trm_hrs_attempt >= 8 THEN 3
-                  WHEN dh.div_cde = 'GR'
-                       AND sdm.trm_hrs_attempt > 0 THEN 2
-                  WHEN dh.div_cde = 'GR' THEN 1
-                  WHEN dh.div_cde = 'CE' THEN 1
-                  ELSE 0
-                END                                     STUDENT_STATUS,
+                cte_can.enrollment_date,
                 sch.table_desc                          SCHOOL,
                 --JON**************************************
                 CASE
@@ -439,7 +426,7 @@ WITH loa
                 LEFT(am.addr_line_2, 40)                AS ADDRESS_LINE_2,
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
-                alt_ctc.username                        NETWORK_USER_NAME,
+                cte_alt_ctc.username                        NETWORK_USER_NAME,
                 bmu.card_no                             MACKCARD_ID,
                 --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
@@ -451,9 +438,16 @@ WITH loa
                 conc2.conc_desc                         CONC2,
                 min1.major_minor_desc                   MINOR1,
                 min2.major_minor_desc                   MINOR2,
-                'FIXME'                                 ACADEMIC_STATUS,
-                loa.absence_desc                        LEAVE_REASON,
-                loa.leave_begin_dte                     LEAVE_DATE,
+                CASE 
+                    WHEN (getdate() < cte_loa.LEAVE_END_DTE or cte_loa.LEAVE_END_DTE is null)
+                     AND dh.EXIT_REASON IS NULL
+                    THEN 'LA' 
+                    WHEN dh.EXIT_REASON IS NOT NULL
+                    THEN 'WD'
+                    ELSE sm.CUR_ACAD_PROBATION
+                END                                     ACADEMIC_STATUS,
+                cte_loa.absence_desc                    LEAVE_REASON,
+                cte_loa.leave_begin_dte                 LEAVE_DATE,
                 bm.SelfGenderIdentificationDefinitionAppID ident_gender,
                 nm.preferred_name,
                 cdt.COHORT_CDE,
@@ -472,14 +466,14 @@ WITH loa
                 pm.PHONE
          -- -- -- -- -- -- -- -- -- -- -- -- --
          FROM   namemaster nm WITH (nolock)
-                JOIN biograph_master bm WITH (nolock)
+                -- JOIN cte_reg_stu rs with (nolock) -- bad dog! heel!
+                --   ON nm.id_num = rs.id_num
+                inner JOIN cte_can with (nolock)
+                  ON nm.id_num = cte_can.id_num
+                left JOIN cte_alt_ctc WITH (nolock)
+                  ON ( nm.id_num = cte_alt_ctc.id_num )
+                left JOIN biograph_master bm WITH (nolock)
                   ON nm.id_num = bm.id_num
-                JOIN reg_stu rs with (nolock)
-                  ON nm.id_num = rs.id_num
-                JOIN can with (nolock)
-                  ON nm.id_num = can.id_num
-                JOIN alt_ctc WITH (nolock)
-                  ON ( nm.id_num = alt_ctc.id_num )
                 LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
                   ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
@@ -520,8 +514,8 @@ WITH loa
                           AND npm2.phonetypedefappid = -2 --home phone
                 LEFT JOIN phonemaster pm2 WITH (nolock)
                        ON npm2.phonemasterappid = pm2.appid
-                LEFT JOIN loa
-                       ON nm.id_num = loa.id_num
+                LEFT JOIN cte_loa
+                       ON nm.id_num = cte_loa.id_num
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
                             AND dh.cur_degree = 'Y' )
@@ -565,19 +559,20 @@ WITH loa
                 LEFT JOIN COHORT_DEFINITION cdt
                        ON ( sdm.COHORT_DEFINITION_APPID = cdt.APPID )
 ),
-both as
+cte_both as
     (
         SELECT *
-        FROM   curstu
+        FROM   cte_curstu
         UNION
         SELECT *
-        FROM   newstu
+        FROM   cte_newstu
     )
-    -- select * from both;
+    -- select * from cte_both;
+    -- select count(*) rex from cte_newstu;
 
 -- end of CTE specifications
 select
-    OTHER_ID                student_id,
+    stu_id                  student_id,
     first_name,
     middle_name,
     last_name,
@@ -602,12 +597,12 @@ select
     ''                      OPT_OUT_OF_TEXT,
     concat(NETWORK_USER_NAME,'@merrimack.edu')
                             CAMPUS_EMAIL,
-    peml_ctc.email          PERSONAL_EMAIL,
+    cte_peml_ctc.email          PERSONAL_EMAIL,
     ''                      PHOTO_FILE_NAME,
     ''                      PERM_PO_BOX,
     ''                      PERM_PO_BOX_COMBO,
     ''                      ADMIT_TERM,
-    case when sport.id_num is null then 0 else 1 end
+    case when cte_sport.id_num is null then 0 else 1 end
                             STUDENT_ATHLETE,
     ethnicity,
     'local'                 ADDRESS1_TYPE,
@@ -694,24 +689,24 @@ select
     ''                      cohort_year,
     ''                      adm_year,
     ''                      adm_sess,
-    holds.HoldDesc1         hold1_code,
-    holds.HoldStart1        hold1_date,
-    holds.HoldDesc2         hold2_code,
-    holds.HoldStart2        hold2_date,
-    holds.HoldDesc3         hold3_code,
-    holds.HoldStart3        hold3_date,
+    cte_holds.HoldDesc1     hold1_code,
+    cte_holds.HoldStart1    hold1_date,
+    cte_holds.HoldDesc2     hold2_code,
+    cte_holds.HoldStart2    hold2_date,
+    cte_holds.HoldDesc3     hold3_code,
+    cte_holds.HoldStart3    hold3_date,
     ''                      activity_date
 
-from both
+from cte_both
     left join
-    peml_ctc
-    on both.OTHER_ID = peml_ctc.ID_NUM
+    cte_peml_ctc
+    on cte_both.stu_id = cte_peml_ctc.ID_NUM
     left join
-    sport
-    on both.OTHER_ID = sport.ID_NUM
+    cte_sport
+    on cte_both.stu_id = cte_sport.ID_NUM
     left join
-    holds
-    on both.OTHER_ID = holds.ID_NUM
+    cte_holds
+    on cte_both.stu_id = cte_holds.ID_NUM
 
 ;
 
