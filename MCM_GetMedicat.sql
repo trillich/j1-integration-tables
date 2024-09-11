@@ -197,23 +197,26 @@ WITH loa
                 emrg_mobl_phn                           EMERPHONE1,
                 emrg_relationship                       EMERRELATIONSHIP,
                 Getdate()                               LASTIMPORTDATE,
-                --JON************Assuming this is just a call to Getdate() for current date?
                 LEFT(am.addr_line_2, 40)                AS ADDRESS_LINE_2,
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
                 alt_ctc.username                        NETWORK_USER_NAME,
                 bmu.card_no                             MACKCARD_ID,
-                --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
                 sch.table_desc                          Subprogram,
-                --JON************Looks like this is just repeating the school
                 maj1.major_minor_desc                   MAJOR1,
                 maj2.major_minor_desc                   MAJOR2,
                 conc1.conc_desc                         CONC1,
                 conc2.conc_desc                         CONC2,
                 min1.major_minor_desc                   MINOR1,
                 min2.major_minor_desc                   MINOR2,
-                'FIXME'                                 ACADEMIC_STATUS,
+                CASE 
+					WHEN loa.ID_NUM IS NOT NULL AND dh.EXIT_REASON IS NULL THEN loa.ABSENCE_CDE + '-' + loa.ABSENCE_DESC 
+					WHEN dh.EXIT_REASON IS NOT NULL THEN dh.EXIT_REASON + '-' + ext.TABLE_DESC
+					WHEN sm.CUR_ACAD_PROBATION IS NOT NULL THEN sm.CUR_ACAD_PROBATION + '-' + asd.ACAD_STAND_DESC
+					WHEN sm.CURRENT_CLASS_CDE = 'NM' THEN 'NM-Non_Matriculate'
+					ELSE 'Unknown'
+				END                                 ACADEMIC_STATUS,
                 loa.absence_desc                        LEAVE_REASON,
                 loa.leave_begin_dte                     LEAVE_DATE
          -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -269,12 +272,12 @@ WITH loa
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
                             AND dh.cur_degree = 'Y' )
-                --***JON - need this since degree_history can be multiple records per student.
+				LEFT JOIN TABLE_DETAIL ext WITH (NOLOCK) 
+					   ON dh.EXIT_REASON = ext.TABLE_VALUE AND ext.COLUMN_NAME = 'exit_reason'
                 LEFT JOIN student_div_mast sdm WITH (nolock)
                        ON ( dh.id_num = sdm.id_num
                             AND dh.div_cde = sdm.div_cde
                             AND sdm.is_student_div_active = 'Y' )
-                --***JON - need this to ensure current degree_history is aligned with the current student_div_mast record
                 LEFT JOIN mcm_latest_ethnicrace_detail ethnic WITH (nolock)
                        ON ( nm.id_num = ethnic.id_num )
                 LEFT JOIN cm_emerg_contacts emerg WITH (nolock)
@@ -287,14 +290,10 @@ WITH loa
                 LEFT JOIN major_minor_def maj1 WITH (nolock)
                        ON ( dh.major_1 = maj1.major_cde )
                 LEFT JOIN instit_divisn_def idd WITH (nolock)
-                       --Jon************************************************
                        ON maj1.institut_div_cde = idd.institut_div_cde
-                --Jon************************************************
                 LEFT JOIN table_detail sch WITH (nolock)
-                       --Jon************************************************
                        ON idd.school_cde = sch.table_value
                           AND sch.column_name = 'SCHOOL_CDE'
-                --Jon************************************************
                 LEFT JOIN major_minor_def maj2 WITH (nolock)
                        ON ( dh.major_2 = maj2.major_cde )
                 LEFT JOIN major_minor_def min1 WITH (nolock)
@@ -304,7 +303,9 @@ WITH loa
                 LEFT JOIN concentration_def conc1 WITH (nolock)
                        ON ( dh.concentration_1 = conc1.conc_cde )
                 LEFT JOIN concentration_def conc2 WITH (nolock)
-                       ON ( dh.concentration_2 = conc2.conc_cde )),
+                       ON ( dh.concentration_2 = conc2.conc_cde )
+				LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
+					   ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
  newstu
      AS (SELECT 'NEW'                                   grp,
                 nm.id_num                               PATIENT_CONTROL_ID,
@@ -338,7 +339,6 @@ WITH loa
                 eml.alternatecontact                    EMAIL_ADDRESS,
                 CASE
                   WHEN sdm.trm_hrs_attempt = 0 THEN 1
-                  --not eligible  --JON**********************************************
                   ELSE 2 --eligible
                 END                                     Eligibility,
                 CASE
@@ -347,18 +347,15 @@ WITH loa
                 END                                     Inactive,
                 CASE
                   WHEN ssa.room_assign_sts = 'A'
-                -- or ra.id_num > 0 -- FIXME maybe J1CONV data is just too anemic for testing...?
                 THEN ra.bldg_cde + ra.room_cde
                   ELSE ''
                 END                                     CAMPUS_ADDRESS,
-                --JON***************Need to use Stud_sess_assign to determine if commuter
                 LEFT(amc.addr_line_1, 40)               PERMANENT_ADDRESS,
                 amc.city                                PERMANENT_CITY,
                 amc.state                               PERMANENT_STATE,
                 amc.postalcode                          PERMANENT_ZIP_CODE,
                 tdc.table_desc                          PERMANENT_COUNTRY,
                 pm2.phone                               PERMANENT_PHONE,
-                --JON*********************************
                 CASE
                   WHEN bm.citizen_of <> 'US' THEN 1
                   ELSE 0
@@ -408,7 +405,6 @@ WITH loa
                   ELSE 0
                 END                                     STUDENT_STATUS,
                 sch.table_desc                          SCHOOL,
-                --JON**************************************
                 CASE
                   WHEN ssa.room_assign_sts = 'A' THEN 1
                   ELSE 2
@@ -431,23 +427,20 @@ WITH loa
                 emrg_mobl_phn                           EMERPHONE1,
                 emrg_relationship                       EMERRELATIONSHIP,
                 Getdate()                               LASTIMPORTDATE,
-                --JON************Assuming this is just a call to Getdate() for current date?
                 LEFT(am.addr_line_2, 40)                AS ADDRESS_LINE_2,
                 LEFT(amc.addr_line_2, 40)               AS
                 PERMANENT_ADDRESS_LINE_2,
                 alt_ctc.username                        NETWORK_USER_NAME,
                 bmu.card_no                             MACKCARD_ID,
-                --JON************In a holding pattern for this one...
                 dd.div_desc                             PROGRAM,
                 sch.table_desc                          Subprogram,
-                --JON************Looks like this is just repeating the school
                 maj1.major_minor_desc                   MAJOR1,
                 maj2.major_minor_desc                   MAJOR2,
                 conc1.conc_desc                         CONC1,
                 conc2.conc_desc                         CONC2,
                 min1.major_minor_desc                   MINOR1,
                 min2.major_minor_desc                   MINOR2,
-                'FIXME'                                 ACADEMIC_STATUS,
+                'ACPT-Accepted Full'                                 ACADEMIC_STATUS,
                 loa.absence_desc                        LEAVE_REASON,
                 loa.leave_begin_dte                     LEAVE_DATE
          -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -505,15 +498,12 @@ WITH loa
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
                             AND dh.cur_degree = 'Y' )
-                --***JON - need this since degree_history can be multiple records per student.
                 LEFT JOIN student_div_mast sdm WITH (nolock)
                        ON ( dh.id_num = sdm.id_num
                             AND dh.div_cde = sdm.div_cde
                             AND sdm.is_student_div_active = 'Y' )
-                --***JON - need this to ensure current degree_history is aligned with the current student_div_mast record
                 LEFT JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
-                -- AND sm.cur_stud_div = sdm.div_cde ) --***JON - Not necessary since student_master is a single record per student
                 LEFT JOIN mcm_latest_ethnicrace_detail ethnic WITH (nolock)
                        ON ( nm.id_num = ethnic.id_num )
                 LEFT JOIN cm_emerg_contacts emerg WITH (nolock)
@@ -524,14 +514,10 @@ WITH loa
                 LEFT JOIN major_minor_def maj1 WITH (nolock)
                        ON ( dh.major_1 = maj1.major_cde )
                 LEFT JOIN instit_divisn_def idd WITH (nolock)
-                       --Jon************************************************
                        ON maj1.institut_div_cde = idd.institut_div_cde
-                --Jon************************************************
                 LEFT JOIN table_detail sch WITH (nolock)
-                       --Jon************************************************
                        ON idd.school_cde = sch.table_value
                           AND sch.column_name = 'SCHOOL_CDE'
-                --Jon************************************************
                 LEFT JOIN major_minor_def maj2 WITH (nolock)
                        ON ( dh.major_2 = maj2.major_cde )
                 LEFT JOIN major_minor_def min1 WITH (nolock)
