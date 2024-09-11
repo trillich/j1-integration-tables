@@ -5,7 +5,7 @@ GO
 
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
--- Create date: 7/29/2024
+-- Create date: 7/29/2024...9/5/2024
 -- Description:	Updates/inserts housing and meal plan assignments
 -- Modified:	
 --	
@@ -37,7 +37,8 @@ BEGIN
 	BEGIN TRY
 		BEGIN TRANSACTION;
 
-		SET @trancntmsg = 'Implicit Transaction on? : ' + IIF(@@OPTIONS & 2 = 0, 'OFF', 'ON') + ' : Tran cnt after Begin Tran: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+		SET @trancntmsg = '';
+		-- SET @trancntmsg = 'Implicit Transaction on? : ' + IIF(@@OPTIONS & 2 = 0, 'OFF', 'ON') + ' : Tran cnt after Begin Tran: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 
 		DECLARE @Message VARCHAR(8000) = ''; 
 		DECLARE @cur_loc_cde 			AS varchar(4);
@@ -51,6 +52,7 @@ BEGIN
 		DECLARE @cur_meal_plan 			AS varchar(4);
 
 		DECLARE @meal_plan_only         AS int; -- might not have any room/dorm info, just a meal plan
+        DECLARE @meal_plan_change       AS int;
         DECLARE @cancelling             AS int;
 
 		DECLARE @new_loc_cde 			AS varchar(4);
@@ -66,6 +68,7 @@ BEGIN
 		DECLARE @resid_commuter_sts		AS char(1);
 		DECLARE @exit_dorm				AS bit; -- student leaving?
 		DECLARE @enter_dorm 			AS bit; -- student entering?
+        DECLARE @has_sess_assign        AS bit;
 
 		DECLARE @user					AS varchar(513);
 		DECLARE @job					AS varchar(30);
@@ -79,15 +82,15 @@ BEGIN
 		-- Defaults:
 		SET @exit_dorm = 0;
 		SET @enter_dorm = 0;
-		SET @resid_commuter_sts = 'R';
+		SET @resid_commuter_sts = @cancel_rsn;
 		SET @meal_plan_only = 0;
         SET @cancelling = 0;
-		SET @trancntmsg = @trancntmsg + ' : Tran cnt Start: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+		-- SET @trancntmsg = @trancntmsg + ' : Tran cnt Start: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 
 		IF @@TRANCOUNT > 1 AND XACT_STATE() = 1
 		BEGIN
 			COMMIT TRANSACTION;
-			SET @trancntmsg = @trancntmsg + ' : Tran cnt > 1 at beginning of execution so now committing: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
+			-- SET @trancntmsg = @trancntmsg + ' : Tran cnt > 1 at beginning of execution so now committing: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		END
 
 		---------------------------------------Preliminary Data Validation--------------------------------------------
@@ -102,7 +105,7 @@ BEGIN
 			Raiserror( 'Session code is required!', 16, 1 );
 		END
 
-		-- Location-code sanity check
+        -- Location-code sanity check
 		SELECT @new_loc_cde = loc_cde 
 		FROM ROOM_MASTER 
 		WHERE bldg_cde = @BLDG_CDE;
@@ -112,6 +115,7 @@ BEGIN
             if @meal_plan > '!'
             BEGIN
                 set @meal_plan_only = 1
+                set @resid_commuter_sts = 'C' -- legacy code? can't determine L or F tho :( FIXME
             END
             ELSE
             BEGIN
@@ -119,9 +123,9 @@ BEGIN
             END
 		END
 
-        IF @cancel_rsn > '!' or @cancel_dte > cast('1/1/1970' as date)
+        IF @stat = 'R' or @cancel_rsn > '!' or @cancel_dte > cast('1/1/1970' as date)
         BEGIN
-            SET @cancelling = 1
+            SET @cancelling = 1;
         END
 
         if @meal_plan_only = 0
@@ -153,11 +157,19 @@ BEGIN
 		---------------------- Gather CURRENT dorm info, if any ----------------------
         SET @debugger = 'Gathering prelim info';
 
-		SELECT 
+		SELECT @has_sess_assign = CASE WHEN id_num is not null THEN 1 ELSE 0 END, 
 			@cur_resid_comm_sts = resid_commuter_sts, 
 			@cur_meal_plan = meal_plan
-		FROM STUD_SESS_ASSIGN
+		FROM STUD_SESS_ASSIGN 
 		WHERE sess_cde = @sess_cde AND id_num = @id_num;
+
+        SET @meal_plan_change = 0
+		--SET @trancntmsg = '@meal_plan_change = 0 | @meal_plan = ' + isnull(@meal_plan,'none') + ' | @cur_meal_plan = ' + isnull(@cur_meal_plan,'none');
+        if (isnull(@meal_plan,'') <> '' OR isnull(@cur_meal_plan,'') <> '') and isnull(@meal_plan, '') <> isnull(@cur_meal_plan, '')
+        BEGIN
+            set @meal_plan_change = 1
+			--SET @trancntmsg = '@meal_plan_change = 1';
+        END
 
         -- set @msg = concat(@debugger, ' mpo:', @meal_plan_only, ', id=[', isnull(@id_num,'?'), '], sess=[', isnull(@sess_cde,'?'), ']');
         --PRINT @msg;
@@ -208,12 +220,12 @@ BEGIN
 				SELECT table_value, table_desc FROM J1CONV.dbo.TABLE_DETAIL WHERE column_name = 'resid_commuter_sts'
 				-- only shows C/R... nothing for leave-of-absence or withdrawal
 				 */
-				set @resid_commuter_sts = 'C' -- incoming status
+				-- set @resid_commuter_sts = 'C' -- incoming status
 				set @room_change_reason = 'COM' -- FIXME the EXP/FIN/HLT/INC/REP codes don't have a value for 'commuter'?
 				if @cancelling > 0 -- we just need to know when it's a reasonable date
 				begin
-					SET @resid_commuter_sts = 'W' -- FIXME what is the code for withdraw/cancel/leave-of-absence
-					SET @room_change_reason = @cancel_rsn
+					SET @resid_commuter_sts = @cancel_rsn;
+					SET @room_change_reason = @cancel_rsn;
 				end
 
 				SET @exit_dorm = 1;
@@ -222,6 +234,8 @@ BEGIN
 		END
 		ELSE
 		BEGIN --------- have incoming bldg_code: RESIDENT
+
+            SET @resid_commuter_sts = 'R'
 
 			if isnull(@cur_bldg_cde,'') = ''
 			BEGIN -- was commuter, now resident
@@ -241,7 +255,6 @@ BEGIN
 				SET @exit_dorm = 1; -- leave old room
 				SET @enter_dorm = 1; -- enter the new room
 				SET @room_change_reason = 'REP' -- FIXME just guessing here, "preference"?
-				SET @resid_commuter_sts = 'R'
 			END
 		END
 
@@ -257,8 +270,7 @@ BEGIN
 
 			UPDATE STUD_SESS_ASSIGN 
 			SET resid_commuter_sts =@resid_commuter_sts,
-                room_assign_sts = 'U', -- not 100% certain this is needed, but here we are
-				meal_plan = @meal_plan , 
+				meal_plan = CASE WHEN @resid_commuter_sts NOT IN ('F', 'L', 'C') THEN NULL ELSE @meal_plan END, 
 				user_name = @user , 
 				job_name = @job , 
 				job_time = getdate() 
@@ -291,7 +303,7 @@ BEGIN
             -- removing a roommate makes all other roommates A[vailable]:
             UPDATE ssa SET ssa.available_as_rmmate = 'A'
             FROM STUD_SESS_ASSIGN ssa
-                  INNER JOIN STUD_ROOMMATES sr ON ssa.SESS_CDE = sr.SESS_CDE AND ssa.ID_NUM = sr.ROOMMATE_ID
+                INNER JOIN STUD_ROOMMATES sr ON ssa.SESS_CDE = sr.SESS_CDE AND ssa.ID_NUM = sr.ROOMMATE_ID
             WHERE  sr.sess_cde =@sess_cde AND sr.bldg_loc_cde =@cur_loc_cde AND sr.bldg_cde =@cur_bldg_cde AND sr.room_cde =@cur_rm_cde AND sr.roommate_id = @id_num;
 
 			DELETE FROM STUD_ROOMMATES 
@@ -301,13 +313,22 @@ BEGIN
 			UPDATE STUD_SESS_ASSIGN 
 			SET room_assign_sts ='U', 
 				available_as_rmmate = 
-					CASE WHEN @RESID_COMMUTER_STS IN ('C', 'F', 'L') 
+					CASE WHEN @RESID_COMMUTER_STS NOT IN ('R') 
 					THEN 'U' 
 					ELSE 'A' END,
 				user_name = @user ,
 				job_name = @job ,
 				job_time = getdate() 
 			WHERE sess_cde =@sess_cde AND id_num =@id_num;
+
+            UPDATE ROOM_ASSIGN
+            SET id_num = NULL, 
+				room_assign_sts = 'U', 
+				ASSIGN_DTE = NULL, 
+				user_name = @user ,
+				job_name = @job ,
+				job_time = getdate() 
+            WHERE id_num = @id_num AND sess_cde = @sess_cde;
 
 			INSERT INTO ROOM_CHANGE_HIST (
 				sess_cde ,
@@ -351,7 +372,7 @@ BEGIN
             SET @debugger = 'Entering dorm';
 			-- PRINT 'enter_dorm = 1'
 
-			IF isnull(@cur_resid_comm_sts,'') <> ''
+			IF @has_sess_assign = 1
 			BEGIN -- assignment already exists in STUD_SESS_ASSIGN
 
 				-- PRINT 'cur_resid_comm_sts <> '''''
@@ -415,8 +436,11 @@ BEGIN
 				resid_commuter_sts =@resid_commuter_sts ,
 				meal_plan =@meal_plan ,
 				available_as_rmmate = 
-					CASE WHEN @resid_commuter_sts IN ('C', 'F', 'L') 
+					CASE
+                    WHEN @resid_commuter_sts IN ('C', 'F', 'L') 
 					THEN 'U' 
+                    WHEN @new_rm_num_vacancies <= 1
+                    THEN 'U'
 					ELSE 'A' END, 
 				user_name = @user ,
 				job_name = @job ,
@@ -439,7 +463,7 @@ BEGIN
             SELECT ra.id_num as RoommateID
             FROM ROOM_ASSIGN ra
             WHERE ra.sess_cde = @sess_cde AND ra.bldg_loc_cde = @new_loc_cde AND ra.bldg_cde = @BLDG_CDE AND ra.room_cde = @ROOM_CDE
-                  AND ra.ID_NUM <> @ID_NUM;
+                AND ra.ID_NUM <> @ID_NUM;
 
 			OPEN roomie_crsr;
 
@@ -493,7 +517,7 @@ BEGIN
 			WHERE sess_cde =@SESS_CDE AND bldg_loc_cde =@new_loc_cde AND bldg_cde =@BLDG_CDE AND room_cde =@ROOM_CDE;
 
 		END
-        ELSE IF @meal_plan_only = 1
+        ELSE IF @meal_plan_only = 1 or @meal_plan_change = 1
         BEGIN
             -- not entering dorm, but we do have a meal plan anyway
 
@@ -514,6 +538,8 @@ BEGIN
                     job_name = @job , 
                     job_time = getdate() 
                 WHERE sess_cde = @sess_cde AND id_num =@id_num;
+
+				SET @trancntmsg = @trancntmsg + ' | Meal Plan Updated';
             END
 
         END
@@ -547,7 +573,7 @@ BEGIN
 			--SET @trancntmsg = @trancntmsg + ' : Tran cnt in Catch after Commit: ' + cast(@@TRANCOUNT as char(2)) + ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
 		END
 		--SET @trancntmsg = @trancntmsg + ' : Tran cnt in Catch before log: ' + cast(@@TRANCOUNT as char(2))+ ' XACT_STATE = ' + cast(XACT_STATE() as char(2));
-		SET @Message = @Message + ' : ' + @trancntmsg;
+		-- SET @Message = @Message + ' : ' + @trancntmsg;
 
 		exec MCM_Error_Handler @Message, @id_num, @job;
 		RAISERROR(N'%s', @errorseverity, @errorstate, @Message);
