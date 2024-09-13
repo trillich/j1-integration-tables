@@ -3,7 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetTHDstudents]
-
+@exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -76,13 +76,10 @@ cte_can
                 LEFT JOIN STUDENT_MASTER s
                        ON ( c.id_num = s.ID_NUM )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
-                AND
-                (
-                    c.YR_CDE = @curyr
+                AND c.YR_CDE = @curyr
                 AND c.TRM_CDE = left(@cterm,2)
                 AND c.STAGE IN ( 'DEPT', 'NMDEP' )
                 AND c.CUR_CANDIDACY = 'Y'
-                )
                 AND s.id_num IS NULL
                 )
 -- select count(*) from cte_can;
@@ -148,8 +145,8 @@ cte_curstu
                 pm.phone                                Mobile_Phone,
                 CONVERT(VARCHAR(10), bm.birth_dte, 101) Date_Of_Birth,
                 bm.marital_sts                          Marital_Status,
-                '7'                                     Employment,-- FIXME
-                'N/A'                                   Employer_Code,-- FIXME
+                '7'                                     Employment,-- FIXME?
+                'N/A'                                   Employer_Code,-- FIXME?
                 eml.alternatecontact                    EMAIL_ADDRESS,
                 CASE
                   WHEN sdm.trm_hrs_attempt = 0 THEN 1
@@ -235,7 +232,7 @@ cte_curstu
                 END                                     ACADEMIC_STATUS,
                 cte_loa.absence_desc                    LEAVE_REASON,
                 cte_loa.leave_begin_dte                 LEAVE_DATE,
-                bm.SelfGenderIdentificationDefinitionAppID ident_gender,
+                NULL ident_gender,
                 nm.preferred_name,
                 cdt.COHORT_CDE,
                 dh.EXPECT_GRAD_YR,
@@ -250,7 +247,8 @@ cte_curstu
                 am.ADDR_LINE_3,
                 ''                                      addr_line_4,
                 am.COUNTRY,
-                pm.PHONE
+                pm.PHONE,
+                nm.IS_FERPA_RESTRICTED
          -- -- -- -- -- -- -- -- -- -- -- -- --
          FROM   namemaster nm WITH (nolock)
                 left JOIN biograph_master bm WITH (nolock)
@@ -360,8 +358,8 @@ cte_curstu
                 pm.phone                                Mobile_Phone,
                 CONVERT(VARCHAR(10), bm.birth_dte, 101) Date_Of_Birth,
                 bm.marital_sts                          Marital_Status,
-                '7'                                     Employment,-- FIXME
-                'N/A'                                   Employer_Code,-- FIXME
+                '7'                                     Employment,-- FIXME?
+                'N/A'                                   Employer_Code,-- FIXME?
                 eml.alternatecontact                    EMAIL_ADDRESS,
                 CASE
                   WHEN sdm.trm_hrs_attempt = 0 THEN 1
@@ -463,7 +461,8 @@ cte_curstu
                 am.ADDR_LINE_3,
                 ''                                      addr_line_4,
                 am.COUNTRY,
-                pm.PHONE
+                pm.PHONE,
+                nm.IS_FERPA_RESTRICTED
          -- -- -- -- -- -- -- -- -- -- -- -- --
          FROM   namemaster nm WITH (nolock)
                 -- JOIN cte_reg_stu rs with (nolock) -- bad dog! heel!
@@ -581,9 +580,13 @@ select
     ident_gender            identified_gender,
     preferred_name,
     'Student'               person_type,
-    '?'                     privacy_indicator, -- FIXME FERPA flags?
+    case
+        when IS_FERPA_RESTRICTED = 'N'
+        then 0
+        else -1
+        end                 privacy_indicator,
     concat(NETWORK_USER_NAME,'@merrimack.edu')
-                            additional_id1, -- FIXME USERNAME
+                            additional_id1,
     ''                      additional_id2,
     current_class_cde       class_status,
     cohort_cde              student_status,
