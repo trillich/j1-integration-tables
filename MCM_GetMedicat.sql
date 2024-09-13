@@ -3,7 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetMedicat]
-
+	@exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -15,21 +15,21 @@ AS
 -- =============================================
 BEGIN
 
-        declare @cterm as varchar(6)
-        declare @prevyr as int
-        declare @curyr as int
-        declare @nxtyr as int
-        set nocount on;
+       declare @cterm as varchar(6)
+       declare @prevyr as int
+       declare @curyr as int
+       declare @nxtyr as int
+       set nocount on;
 
-        select @cterm = dbo.MCM_FN_CALC_TRM('C');
-        set @curyr = cast(left(@cterm,4) as int);
-        set @prevyr = @curyr - 1;
-        set @nxtyr = @curyr + 1;
+       select @cterm = dbo.MCM_FN_CALC_TRM('C');
+       set @curyr = cast(left(@cterm,4) as int);
+       set @prevyr = @curyr - 1;
+       set @nxtyr = @curyr + 1;
 
-        SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
-        -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
+       SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
+       -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
 
-WITH loa
+WITH cte_loa
      AS (SELECT DISTINCT x.id_num,
                          x.leave_begin_dte,
                          x.absence_cde,
@@ -40,21 +40,21 @@ WITH loa
          WHERE  ( x.leave_begin_dte <= Getdate()
                   AND ( x.leave_end_dte IS NULL
                          OR x.leave_end_dte > Getdate() ) )),
- reg_stu
+ cte_reg_stu
      AS (SELECT DISTINCT id_num
          FROM   student_crs_hist
          WHERE  stud_div IN ( 'UG', 'GR' )
                 AND yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND transaction_sts IN ( 'P', 'H', 'C', 'D' )),
- alt_ctc
+ cte_alt_ctc
      AS (SELECT id_num,
-                LEFT(acm.alternatecontact, Charindex('@', acm.alternatecontact)
-                                           - 1)
-                   username
+                LEFT(acm.alternatecontact, 
+                    Charindex('@', acm.alternatecontact) - 1)
+                    username
          FROM   alternatecontactmethod acm WITH (nolock)
          WHERE  acm.addr_cde = '*EML'
                 AND acm.alternatecontact LIKE '%@merrimack.edu'),
- can
+ cte_can
      AS (SELECT c.id_num,
                 -- candidacy_type,
                 CASE c.candidacy_type
@@ -65,17 +65,18 @@ WITH loa
                 -- hist_stage_dte,
                 CONVERT(VARCHAR(10), c.hist_stage_dte, 101) enrollment_date
          FROM   candidacy c
-                LEFT JOIN reg_stu r
+                LEFT JOIN cte_reg_stu r
                        ON ( c.id_num = r.id_num )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
                 AND c.yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND c.stage IN ( 'DEPT', 'NMDEP' )
                 AND c.cur_candidacy = 'Y'
                 AND r.id_num IS NULL),
- curstu
-     AS (SELECT 'CURRENT'                               grp,
-                nm.id_num                               PATIENT_CONTROL_ID,
-                bm.ssn,
+ cte_curstu
+     AS (SELECT 
+				--'CURRENT'                               grp, --for debugging
+                ''										PATIENT_CONTROL_ID,
+                ''										ssn,
                 nm.id_num                               OTHER_ID,
                 LEFT(nm.last_name, 30)                  last_name,
                 LEFT(nm.first_name, 20)                 first_name,
@@ -105,7 +106,6 @@ WITH loa
                 eml.alternatecontact                    EMAIL_ADDRESS,
                 CASE
                   WHEN sdm.trm_hrs_attempt = 0 THEN 1
-                  --not eligible  --JON**********************************************
                   ELSE 2 --eligible
                 END                                     Eligibility,
                 CASE
@@ -114,18 +114,15 @@ WITH loa
                 END                                     Inactive,
                 CASE
                   WHEN ssa.room_assign_sts = 'A'
-                -- or ra.id_num > 0 -- FIXME maybe J1CONV data is just too anemic for testing...?
                 THEN ra.bldg_cde + ra.room_cde
                   ELSE ''
                 END                                     CAMPUS_ADDRESS,
-                --JON***************Need to use Stud_sess_assign to determine if commuter
                 LEFT(amc.addr_line_1, 40)               PERMANENT_ADDRESS,
                 amc.city                                PERMANENT_CITY,
                 amc.state                               PERMANENT_STATE,
                 amc.postalcode                          PERMANENT_ZIP_CODE,
                 tdc.table_desc                          PERMANENT_COUNTRY,
                 pm2.phone                               PERMANENT_PHONE,
-                --JON*********************************
                 CASE
                   WHEN bm.citizen_of <> 'US' THEN 1
                   ELSE 0
@@ -174,7 +171,6 @@ WITH loa
                   ELSE 0
                 END                                     STUDENT_STATUS,
                 sch.table_desc                          SCHOOL,
-                --JON**************************************
                 CASE
                   WHEN ssa.room_assign_sts = 'A' THEN 1
                   ELSE 2
@@ -218,12 +214,12 @@ WITH loa
 					ELSE 'Unknown'
 				END                                 ACADEMIC_STATUS,
                 loa.absence_desc                        LEAVE_REASON,
-                loa.leave_begin_dte                     LEAVE_DATE
+                CONVERT(varchar(10), loa.leave_begin_dte, 101)                  LEAVE_DATE
          -- -- -- -- -- -- -- -- -- -- -- -- --
          FROM   namemaster nm WITH (nolock)
                 JOIN biograph_master bm WITH (nolock)
                   ON nm.id_num = bm.id_num
-                JOIN reg_stu rs
+                JOIN cte_reg_stu rs
                   ON nm.id_num = rs.id_num
                 JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
@@ -267,7 +263,7 @@ WITH loa
                           AND npm2.phonetypedefappid = -2 --home phone
                 LEFT JOIN phonemaster pm2 WITH (nolock)
                        ON npm2.phonemasterappid = pm2.appid
-                LEFT JOIN loa
+                LEFT JOIN cte_loa loa
                        ON nm.id_num = loa.id_num
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
@@ -283,7 +279,7 @@ WITH loa
                 LEFT JOIN cm_emerg_contacts emerg WITH (nolock)
                        ON ( nm.id_num = emerg.id_num
                             AND emerg.emrg_seq_num = 1 )
-                LEFT JOIN alt_ctc WITH (nolock)
+                LEFT JOIN cte_alt_ctc alt_ctc WITH (nolock)
                        ON ( nm.id_num = alt_ctc.id_num )
                 LEFT JOIN division_def dd WITH (nolock)
                        ON ( sdm.div_cde = dd.div_cde )
@@ -306,10 +302,11 @@ WITH loa
                        ON ( dh.concentration_2 = conc2.conc_cde )
 				LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
 					   ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
- newstu
-     AS (SELECT 'NEW'                                   grp,
-                nm.id_num                               PATIENT_CONTROL_ID,
-                bm.ssn,
+ cte_newstu
+     AS (SELECT 
+				--'NEW'                                   grp, --for debugging
+                ''                              PATIENT_CONTROL_ID,
+                '' ssn,
                 nm.id_num                               OTHER_ID,
                 LEFT(nm.last_name, 30)                  last_name,
                 LEFT(nm.first_name, 20)                 first_name,
@@ -320,7 +317,7 @@ WITH loa
                 am.state,
                 am.postalcode                           ZIP,
                 pm2.phone                               HOME_PHONE,
-                'FIXME'                                 WORK_PHONE,
+                ''										WORK_PHONE,
                 pm.phone                                Mobile_Phone,
                 CONVERT(VARCHAR(10), bm.birth_dte, 101) Date_Of_Birth,
                 CASE
@@ -334,8 +331,8 @@ WITH loa
                        AND bm.gender = 'M' THEN 6 -- widower
                   ELSE 7
                 END                                     Marital_Status,
-                '7'                                     Employment,-- FIXME
-                'N/A'                                   Employer_Code,-- FIXME
+                '7'                                     Employment,
+                ''										Employer_Code,
                 eml.alternatecontact                    EMAIL_ADDRESS,
                 CASE
                   WHEN sdm.trm_hrs_attempt = 0 THEN 1
@@ -377,18 +374,7 @@ WITH loa
                   WHEN dh.div_cde = 'CE' THEN 'Continuing Education'
                   ELSE 'Unknown'
                 END                                     STANDING,
-                -- CASE
-                --   WHEN sm.current_class_cde = 'FR' THEN 1
-                --   WHEN sm.current_class_cde = 'SO' THEN 2
-                --   WHEN sm.current_class_cde = 'JR' THEN 3
-                --   WHEN sm.current_class_cde = 'SR' THEN 4
-                --   WHEN sm.current_class_cde IN ( 'GR', 'GN' ) THEN 5
-                --   ELSE 6 -- 'NM' or 'CE' or NULL
-                -- END                                     CLASS,
                 can.class,
-                -- sm.current_class_cde,
-                -- CONVERT(VARCHAR(10), COALESCE(sdm.re_entry_dte, sdm.entry_dte), 101)
-                --                                         ENROLLMENT_DATE,
                 can.enrollment_date,
                 CASE
                   WHEN dh.div_cde = 'UG'
@@ -447,11 +433,11 @@ WITH loa
          FROM   namemaster nm WITH (nolock)
                 JOIN biograph_master bm WITH (nolock)
                   ON nm.id_num = bm.id_num
-                JOIN reg_stu rs
+                JOIN cte_reg_stu rs
                   ON nm.id_num = rs.id_num
-                JOIN can
+                JOIN cte_can can
                   ON nm.id_num = can.id_num
-                JOIN alt_ctc WITH (nolock)
+                JOIN cte_alt_ctc alt_ctc WITH (nolock)
                   ON ( nm.id_num = alt_ctc.id_num )
                 LEFT JOIN BIOGRAPH_MASTER_UDF bmu
                   ON (bm.ID_NUM = bmu.ID_NUM)
@@ -493,7 +479,7 @@ WITH loa
                           AND npm2.phonetypedefappid = -2 --home phone
                 LEFT JOIN phonemaster pm2 WITH (nolock)
                        ON npm2.phonemasterappid = pm2.appid
-                LEFT JOIN loa
+                LEFT JOIN cte_loa loa
                        ON nm.id_num = loa.id_num
                 LEFT JOIN degree_history dh WITH (nolock)
                        ON ( nm.id_num = dh.id_num
@@ -529,11 +515,11 @@ WITH loa
                 LEFT JOIN concentration_def conc2 WITH (nolock)
                        ON ( dh.concentration_2 = conc2.conc_cde ))
 -- end of CTE specifications
-SELECT *
-FROM   curstu
+SELECT  *
+FROM   cte_curstu curstu
 UNION
 SELECT *
-FROM   newstu 
+FROM   cte_newstu newstu 
 order by other_id
 ;
 
