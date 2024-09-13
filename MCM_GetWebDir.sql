@@ -3,6 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetWebDir]
+@exec as bit = 1
 
 WITH EXECUTE AS 'dbo'
 AS
@@ -18,18 +19,19 @@ BEGIN
     WITH
     cte_empl as (
         SELECT
-            u.ID_NUM,
+            u.ID_NUM            id_number,
             'FIXME' ext,
             n.LAST_NAME,
             n.FIRST_NAME,
-            u.EMP_TITLE,
-            u.EMP_HOME_DEPT,
+            u.EMP_TITLE         personnel_title,
+            -- u.EMP_HOME_DEPT,
             'FIXME' department_long_text,
             -- u.EMP_BUILD,
-            b.BUILDING_DESC,
-            u.EMP_OFFICE,
-            'FIXME' mail_stop,
-            acm.alternatecontact email
+            b.BUILDING_DESC     building_text,
+            u.EMP_OFFICE        office,
+            'FIXME'             mail,
+            acm.alternatecontact alternate_address_line_1,
+            'FIXME'             personal_designation
         FROM
             NAME_MASTER_UDF u with (nolock)
             join
@@ -50,7 +52,7 @@ BEGIN
     )
     select *
     from cte_empl
-    order by LAST_NAME,FIRST_NAME,ID_NUM;
+    order by LAST_NAME,FIRST_NAME,ID_NUMBER;
 
     set nocount off;
     REVERT
