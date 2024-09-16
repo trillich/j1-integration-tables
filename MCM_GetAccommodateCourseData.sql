@@ -18,12 +18,15 @@ AS
 BEGIN
 
 -- defaults for testing:
-declare @curyr int = 2024;
-declare @cterm char(2) = 'FA';
--- declare @daysago int = 1000;
-select @cterm = dbo.MCM_FN_CALC_TRM('C');
+declare @curyr int; -- = 2024;
+declare @cterm varchar(6); -- = 'FA';
+-- declare @daysago int = 68;
+select @cterm = dbo.MCM_FN_CALC_TRM('C'); -- YYYYSS for example: 2024FA
+-- print @cterm;
 set @curyr = cast(left(@cterm,4) as int);
-SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
+SET @cterm = right(@cterm,2); -- SSYYYY (not YYYYSS)
+
+-- print @cterm + ':' + cast(@curyr as varchar(4));
 
 with
 cte_sched
@@ -42,10 +45,12 @@ as (
         SECTION_SCHEDULES ss with (nolock)
     where
         ss.YR_CDE = @curyr
-    and ss.TRM_CDE = left(@cterm,2)
+    and ss.TRM_CDE = @cterm
     -- and ss.CRS_CDE = 'NUR  2000LL'
     -- order by 1 desc
-),
+)
+-- select * from cte_sched where rownum > 1
+,
 cte_fac as (
     -- declare @curyr int = 2024;
     -- declare @cterm char(2) = 'FA';
@@ -68,9 +73,11 @@ cte_fac as (
         on fl.INSTRCTR_ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
     WHERE
         fl.YR_CDE = @curyr
-    and fl.TRM_CDE = left(@cterm,2)
+    and fl.TRM_CDE = @cterm
     -- and fl.CRS_CDE = 'NUR  2000LL'
-),
+)
+-- select * from cte_fac
+,
 cte_reg_stu
 AS (
     -- declare @curyr int = 2024;
@@ -105,18 +112,19 @@ AS (
         on (sch.CRS_CDE = sm.CRS_CDE and sch.YR_CDE = sm.YR_CDE and sch.TRM_CDE = sm.TRM_CDE)
     WHERE  sch.stud_div IN ( 'UG', 'GR' )
         AND sch.YR_CDE = @curyr
-        AND sch.TRM_CDE = left(@cterm,2)
+        AND sch.TRM_CDE = @cterm
         AND sch.transaction_sts IN ( 'H', 'C', 'D' )
         and sch.JOB_TIME > getdate() - @daysago -- the One True Filter
         -- and sch.CRS_CDE like 'NUR  2000L'
     -- order by 2,1
 )
+-- select * from cte_reg_stu;
 
 SELECT
     trim(
         replace(rs.crs_title,' ','_') + replace(rs.crs_cde,' ','')
         + '_'
-        + left(@cterm,2) + cast(@curyr as char(4))
+        + @cterm + cast(@curyr as char(4))
         -- + case when left(@cterm,2) in ('FA','SP') then '' else sm.SUBTERM_CDE end
         + rs.SUBTERM_CDE
     )                               course_unique_id
@@ -183,7 +191,7 @@ SELECT
                 left join
                 cte_sched sched3
                 on (rs.CRS_CDE = sched3.CRS_CDE and sched1.rownum = 3)
-where sched2.CRS_CDE > '!'
+-- where sched2.CRS_CDE > '!'
         order BY
             1,2;
 
