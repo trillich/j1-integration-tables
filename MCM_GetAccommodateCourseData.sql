@@ -120,7 +120,7 @@ AS (
 )
 -- select * from cte_reg_stu;
 
-SELECT
+SELECT 
     trim(
         replace(rs.crs_title,' ','_') + replace(rs.crs_cde,' ','')
         + '_'
@@ -162,8 +162,8 @@ SELECT
     ,rs.GRADE_CDE                   grade
     ,fac2.FIRST_NAME                inst_fname_2
     ,fac2.LAST_NAME                 inst_lname_2
-    ,fac2.fullname                  inst_name_2
-    ,fac2.alfaname                  inst_sortname_2
+    ,fac2.fullname                  instr_name_2
+    ,fac2.alfaname                  instr_sortname_2
     ,fac2.AlternateContact          instr_email_2
     ,fac2.INSTRCTR_ID_NUM           inst_id_2
     ,fac3.FIRST_NAME                inst_fname_3
