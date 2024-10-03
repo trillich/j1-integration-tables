@@ -53,7 +53,12 @@ cte_reg_stu
                 then '8/31/' + cast(sdm.EXPECTED_GRAD_YR as char(4))
                 else '5/31/' + cast(sdm.EXPECTED_GRAD_YR as char(4))
                 END                 AnticipatedDateOfGraduation,
-            dd.DIV_DESC             CareerLevel
+            dd.DIV_DESC             CareerLevel,
+            case sdm.TRANSFER_IN
+            when 'Y'
+            then 'True'
+            else 'False'
+            END                     Transfer
         FROM
             STUDENT_MASTER sm WITH (nolock)
             JOIN
@@ -317,10 +322,9 @@ select
     ''          MajorAdvisor,
     ''          OtherAdvisor,
     res.LocalResidencyStatus,
-    -- res.BLDG_CDE + ' ' + res.ROOM_CDE -- FIXME dorm-name lookups
     res.ROOM_DESC                   HousingFacility,
     International,
-    'FIXME'                         Transfer,
+    stu.Transfer,
     case when sport.ID_NUM is null then 'False' else 'True' end
                                     Athlete,
     ''                              AthleticParticipation,
@@ -382,6 +386,7 @@ from
         on bio.ID_NUM = res.ID_NUM
 -- where stu.id_num = 68431
 -- where LegalFirstName <> InstitutionProvidedFirstName
+-- where TRANSFER_IN = 'Y'
     ;
 
     set nocount off;
