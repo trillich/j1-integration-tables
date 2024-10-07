@@ -19,13 +19,13 @@ BEGIN
 
 -- defaults for testing:
 declare @curyr int = 2024;
-declare @cterm char(2) = 'FA';
+declare @cterm char(6) = 'FA';
 -- declare @daysago int = 1000;
 
 select @cterm = dbo.MCM_FN_CALC_TRM('C');
 set @curyr = cast(left(@cterm,4) as int);
 SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
-
+-- print @cterm;
 with
 cte_reg_stu
 AS (
@@ -74,11 +74,13 @@ cte_fac as (
         on fl.INSTRCTR_ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
     WHERE
         fl.YR_CDE = @curyr
+        and
+        nm.LAST_NAME not like 'TBA %'
     and fl.TRM_CDE = left(@cterm,2)
     -- and fl.CRS_CDE = 'NUR  2000LL'
 )
 
-SELECT DISTINCT
+SELECT DISTINCT 
     fac.INSTRCTR_ID_NUM             faculty_unique_id
     ,fac.FIRST_NAME                 faculty_fname
     ,fac.LAST_NAME                  faculty_lname
@@ -104,3 +106,4 @@ END
 
 ;
 GO
+
