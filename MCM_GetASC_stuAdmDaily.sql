@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-ALTER PROCEDURE [dbo].[MCM_GetASC_stuadmdaily]
+ALTER PROCEDURE [dbo].[MCM_GetASC_stuAdmDaily]
     @exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
@@ -15,11 +15,11 @@ AS
 BEGIN
      set nocount on;
 
-        declare @cterm as VARCHAR(6) = '2024FA'; -- for debugging
-        SET @cterm = dbo.MCM_FN_CALC_TRM('C');
-        declare @curyr as INT        = cast(left(@cterm,4) as int);
+    declare @cterm as VARCHAR(6) = '2024FA'; -- for debugging
+    SET @cterm = dbo.MCM_FN_CALC_TRM('C');
+    declare @curyr as INT        = cast(left(@cterm,4) as int);
 
-        SET @cterm = right(@cterm,2);
+    SET @cterm = right(@cterm,2);
 
 WITH
 cte_can as (
@@ -30,12 +30,20 @@ cte_can as (
         c.DIV_CDE           adm_prog,
         c.PROG_CDE          adm_major,
         c.STAGE             adm_enrstat, -- FIXME just guessing here
-        'FIXME'             adm_decsn_code, -- FIXME
-        'FIXME'             adm_decsn_date,
+        'FULL'              adm_decsn_code, -- FIXME
+        h.hist_stage_dte    adm_decsn_date,
         concat(c.TRM_CDE,' ',cast(c.YR_CDE as char(4)))
                             adm_plansessyr
     FROM
         candidacy c with (nolock)
+        LEFT JOIN
+        stage_history_tran h with (nolock)
+            on (c.ID_NUM = h.ID_NUM
+            and c.YR_CDE = h.YR_CDE
+            and c.TRM_CDE = h.TRM_CDE
+            and c.PROG_CDE = h.PROG_CDE
+            and c.DIV_CDE = h.DIV_CDE
+            and h.hist_stage='ACPT' )
     WHERE   c.div_cde IN ( 'UG', 'GR' )
         AND c.YR_CDE = @curyr
         AND c.TRM_CDE = @cterm
@@ -109,11 +117,33 @@ cte_email
                 AND id_num in ( select cx_id from cte_can )
     )
 -- select * from cte_email;
+,
+cte_slateids as (
+    SELECT
+        ai.ID_NUM,
+        can.adm_prog, -- div_cde
+        max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
+        max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
+    FROM
+        ALTERNATE_IDENTIFIER ai WITH (nolock)
+        JOIN
+        cte_can can
+            on ai.ID_NUM = can.cx_id
+    WHERE
+        ai.IDENTIFIER_TYPE in ('SUG','SGPS')
+        and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
+        and (ai.END_DTE is null or ai.END_DTE > getdate())
+    GROUP BY ai.ID_NUM, can.adm_prog
+)
 
 SELECT
-    'FIXME'             slate_id,
-    'FIXME'             slate_guid,
-    'FIXME'             slte_appid,
+
+    case
+        when slt.adm_prog='GR' then slt.SGPS
+        when slt.adm_prog='UG' then slt.SUG
+        else 'FIXME'
+    end                 slate_guid, -- person guid based on program
+    -- 'FIXME'             slte_appid, -- 
     cx_id,
     first_name,
     pref_first_name,
@@ -123,11 +153,11 @@ SELECT
     email,
     birthday,
     adm_plansessyr,
-    adm_prog,
-    adm_major,
-    adm_enrstat,
-    adm_decsn_code,
-    adm_decsn_date
+    can.adm_prog,
+    can.adm_major,
+    can.adm_enrstat,
+    can.adm_decsn_code,
+    can.adm_decsn_date
 FROM
     cte_can can
     JOIN
@@ -139,6 +169,9 @@ FROM
     LEFT JOIN
     cte_email email
         on ( can.cx_id = email.ID_NUM )
+    LEFT JOIN
+    cte_slateids slt
+        on ( can.cx_id = slt.ID_NUM )
 ORDER BY
     cx_id
     ;

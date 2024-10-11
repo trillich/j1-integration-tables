@@ -37,7 +37,7 @@ BEGIN
 
 WITH
 cte_pop as (
-	--Just retrieve the unique population of ID's that match the previous, current and next academic years
+	--Just retrieve the unique population of ID's that match the current academic year
 	SELECT DISTINCT
             sm.ID_NUM,
             dh.DIV_CDE
