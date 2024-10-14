@@ -233,6 +233,46 @@ cte_roomies as (
         ID_NUM
 )
 -- select * from cte_roomies order by ID_NUM;
+,
+cte_hold_detail as (
+    SELECT
+        ID_NUM,
+        HOLD_CDE
+    FROM
+        HOLD_TRAN
+    WHERE
+        ID_NUM in (select id_num from cte_pop) and
+        END_DTE is null AND
+        HOLD_CDE in ( 'HR','CL','CO','GC','PC','RE' )
+)
+-- select * from cte_hold_detail;
+,
+cte_hold as (
+    SELECT
+        ID_NUM,
+        max(case when HOLD_CDE in ('HR'          ) then HOLD_CDE else null end) health_hold,
+        max(case when HOLD_CDE in ('CL','CO','CG') then HOLD_CDE else null end) bursar_hold,
+        max(case when HOLD_CDE in ('PC','RE'     ) then HOLD_CDE else null end) registrarion_hold
+    FROM
+        cte_hold_detail
+    GROUP BY
+        ID_NUM
+)
+-- select * from cte_hold;
+,
+cte_back2mack as (
+    SELECT
+        ID_NUM,
+        IAMHERE,
+        SUBMIT_DATE as IAMHERE_DATE -- FIXME? not sure which date field to use
+    FROM
+        MCM_BACK_TO_MACK
+    WHERE
+        ID_NUM in ( select ID_NUM from cte_pop ) AND
+        TRM_CDE = right(@cterm,2) AND
+        YR = @curyr
+)
+-- select * from cte_back2mack;
 
 select
     bio.*,
@@ -246,12 +286,23 @@ select
     rm.sp_housing_bldg_room,
     rm.sp_housing_withdraw_date,
     rm.sp_housing_suitemates,
-    'FIXME'             austin_scholar
+    'FIXME'             austin_scholar,
+    hold.health_hold,
+    hold.bursar_hold,
+    hold.registrarion_hold,
+    b2m.iamhere,
+    b2m.IAMHERE_DATE
 from
     cte_bio bio
     JOIN
     cte_roomies rm
     on bio.cx_id = rm.ID_NUM
+    LEFT JOIN
+    cte_hold hold
+    on bio.cx_id = hold.ID_NUM
+    LEFT JOIN
+    cte_back2mack b2m
+    on bio.cx_id = b2m.ID_NUM
 ORDER BY
     bio.cx_id
 -- where mail_addrline1 > '!'
