@@ -133,7 +133,8 @@ cte_exams as (
 -- select * from cte_exams where FRE_TEST > '!';
 
 SELECT
-    s.SUG           slate_guid,
+    s.SUG           slate_id,
+    s.SGPS          slate_guid_asc,
     p.ID_NUM        cx_id,
     case when f.ID_NUM > 0 then 'Y' else 'N' end
                     fye_attended,

@@ -234,7 +234,8 @@ cte_acad as (
 -- select * from cte_acad where conc2_code>'!';
 
 SELECT
-    slate.SUG                       slate_guid, -- FIXME probably not correct
+    slate.SUG                       slate_id,
+    slate.SGPS                      slate_guid_asc,
     pop.ID_NUM                      cx_id,
     prog_code,
     prog_desc,

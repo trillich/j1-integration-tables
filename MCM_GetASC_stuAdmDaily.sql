@@ -138,12 +138,8 @@ cte_slateids as (
 
 SELECT
 
-    case
-        when slt.adm_prog='GR' then slt.SGPS
-        when slt.adm_prog='UG' then slt.SUG
-        else 'FIXME'
-    end                 slate_guid, -- person guid based on program
-    -- 'FIXME'             slte_appid, -- 
+    slt.SUG                         slate_id,
+    slt.SGPS                        slate_guid_asc,
     cx_id,
     first_name,
     pref_first_name,
