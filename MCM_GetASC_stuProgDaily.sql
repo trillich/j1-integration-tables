@@ -2,7 +2,7 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[MCM_GetASC_stuProgDaily]
+ALTER PROCEDURE [dbo].[MCM_GetASC_stuProgDaily]
     @exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
@@ -145,7 +145,7 @@ cte_acad as (
         sdm.ENTRY_DTE                       enr_date,
         case when dh.DIV_CDE not in ('NM','GNM') then sdm.ENTRY_DTE else null end
                                             matric_date,
-        'FIXME'                             acst_desc,
+        'FIXME'                             acst_desc, -- academic status in CX
         'FIXME'                             acst_code,
         dh.MAJOR_1                          major1_code,
         maj1.MAJOR_MINOR_DESC               major1_desc,
@@ -310,4 +310,3 @@ END
 
 ;
 GO
-
