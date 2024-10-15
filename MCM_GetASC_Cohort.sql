@@ -32,7 +32,8 @@ WITH
 cte_pop as (
 	--Just retrieve the unique population of ID's that match the previous, current and next academic years
 	SELECT DISTINCT
-            sm.ID_NUM
+            sm.ID_NUM,
+            sm.CUR_ACAD_PROBATION       phoenix
 	 FROM
             STUDENT_MASTER sm WITH (nolock)
             JOIN
@@ -71,6 +72,22 @@ cte_slateids as (
 )
 -- select * from cte_slateids order by id_num;
 ,
+cte_udefs as (
+    SELECT
+        ID_NUM,
+        udef_3a_1           AUST,
+        udef_3a_2           PION,
+        udef_3a_3           MACH,
+        udef_3a_4           OBRI,
+        udef_3a_5           CATH,
+        udef_5a_1           AUGU
+    FROM
+        candidate can
+    WHERE
+        ID_NUM in ( select ID_NUM from cte_pop )
+)
+-- select * from cte_udefs;
+,
 cte_attr_detail as (
     SELECT
         ID_NUM,
@@ -85,9 +102,7 @@ cte_attr_detail as (
             'PROM',
             'COMP',
             'HONR', -- FIXME no HONR in ATTRIBUTE_TRANS but there is HON and HONI
-            'AUST',
-            'PION', -- FIXME no PION in ATTRIBUTE_TRANS (yet?)
-            'MACH') -- FIXME no MACH in ATTRIBUTE_TRANS (yet?)
+            'AUST')
 )
 -- select * from cte_attr_detail order by id_num desc
 ,
@@ -98,9 +113,7 @@ cte_attr as (
         max(case when ATTRIB_CDE='PROM' then ATTRIB_CDE else null end) PROM,
         max(case when ATTRIB_CDE='COMP' then ATTRIB_CDE else null end) COMP,
         max(case when ATTRIB_CDE='HONR' then ATTRIB_CDE else null end) HONR,
-        max(case when ATTRIB_CDE='AUST' then ATTRIB_CDE else null end) AUST,
-        max(case when ATTRIB_CDE='PION' then ATTRIB_CDE else null end) PION,
-        max(case when ATTRIB_CDE='MACH' then ATTRIB_CDE else null end) MACH
+        max(case when ATTRIB_CDE='AUST' then ATTRIB_CDE else null end) AUST
     FROM
         cte_attr_detail
     GROUP BY
@@ -176,7 +189,7 @@ cte_back2mack as (
     WHERE
         ID_NUM in (SELECT id_num FROM cte_pop)
         AND
-        TRM_CDE = @cterm -- only for current term, is that correct? FIXME
+        TRM_CDE = @cterm -- only considering back2mack for current term, is that correct? FIXME
         AND
         YR = @cyr
     GROUP BY
@@ -200,25 +213,21 @@ SELECT
     attr.DEAN               dean,
     attr.PROM               promise,
     attr.COMP               compass,
-    'FIXME'                 phoenix,
+    pop.phoenix,
     attr.HONR               honors,
     attr.AUST               austin,
-    attr.PION               pioneers,
-    attr.MACH               mach,
-    'FIXME'                 obrien,
-    'FIXME'                 cathedral,
-    'FIXME'                 augustine,
+    udef.PION               pioneers,
+    udef.MACH               mach,
+    udef.OBRI               obrien,
+    udef.CATH               cathedral,
+    udef.AUGU               augustine,
     sport.sport1,
     sport.sport2,
     nm.IS_FERPA_RESTRICTED,
     emerg.emerg_name        emergency_contact_name,
     emerg.emerg_num         emergency_contact_number,
-    veh.VP_NUM              parking_pass, -- CM_SA_VEHCL_REG.VP_NUM
-    case
-        when b2m.id_num is not null
-        then 'Y'
-        else 'N'
-    end                     completed_yn, -- back2mack exists, FIXME is this correct?
+    veh.VP_NUM              parking_pass,
+    b2m.iamhere             completed_yn,
     b2m.submit_date         submitted_date,
     b2m.reason              reason,
     b2m.handbook            return_to_campus_handbook,
@@ -231,6 +240,9 @@ FROM
     LEFT JOIN
     cte_attr attr
         on pop.ID_NUM = attr.ID_NUM
+    LEFT JOIN
+    cte_udefs udef
+        on pop.ID_NUM = udef.ID_NUM
     LEFT JOIN
     cte_slateids slate
         on pop.ID_NUM = slate.ID_NUM
