@@ -54,7 +54,7 @@ cte_pop as (
             AND dh.MAJOR_1 <> 'GEN' -- omit nonmatric
             AND dh.cur_degree = 'Y'
 )
--- select * from cte_pop order by id_num;
+-- select * from cte_pop where phoenix is not null order by id_num;
 ,
 cte_slateids as (
     SELECT
@@ -198,7 +198,7 @@ cte_back2mack as (
 ,
 cte_veh as (
     SELECT
-        id_num_veh_ownr id_num,
+        id_num_vp_holder id_num,
         vp_num
     FROM
         cm_sa_vehcl_reg veh
