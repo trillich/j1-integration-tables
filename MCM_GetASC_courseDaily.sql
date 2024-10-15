@@ -68,7 +68,7 @@ cte_slateids as (
         ALTERNATE_IDENTIFIER ai WITH (nolock)
     WHERE
         ai.ID_NUM in ( select ID_NUM from cte_pop )
-        and ai.IDENTIFIER_TYPE in ('SUG','SGPS') -- FIXME no SGPS data in J1CONV, need to confirm with real data
+        and ai.IDENTIFIER_TYPE in ('SUG','SGPS')
         and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
         and (ai.END_DTE is null or ai.END_DTE > getdate())
     GROUP BY ID_NUM
@@ -167,8 +167,8 @@ cte_crs as (
 -- select * from cte_crs;
 
 SELECT
-    slate.SGPS,
-    slate.SUG,
+    slate.SUG           slate_id,
+    slate.SGPS          slate_guid_asc,
     pop.ID_NUM          cx_id,
     pop.DIV_CDE         cw_prog,
     crs.cw_sessyr,
