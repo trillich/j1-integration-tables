@@ -1,5 +1,3 @@
-JUST GETTING STARTED HERE
-
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -178,7 +176,8 @@ cte_acad as (
 -- select * from cte_acad where conc2_code>'!';
 
 SELECT
-    slate.SUG                       slate_guid, -- FIXME probably not correct
+    slate.SUG                       slate_undg_guid,
+    slate.SGPS                      slate_gps_guid,
     pop.ID_NUM                      cx_id,
     prog_code,
     prog_desc,
