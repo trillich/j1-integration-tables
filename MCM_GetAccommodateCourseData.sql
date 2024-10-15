@@ -128,7 +128,7 @@ SELECT
         -- + case when left(@cterm,2) in ('FA','SP') then '' else sm.SUBTERM_CDE end
         + rs.SUBTERM_CDE
     )                               course_unique_id
-    ,rs.id_num                      student_id -- FIXME
+    ,rs.id_num                      student_id
     ,rs.CRS_TITLE                   course_title
     ,rs.course_code
     ,rs.CREDIT_HRS                  credit_hours
