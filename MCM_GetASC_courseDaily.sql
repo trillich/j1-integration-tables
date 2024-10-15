@@ -202,9 +202,12 @@ FROM
     LEFT JOIN
     cte_fac fac
     on (crs.CRS_CDE=fac.CRS_CDE and crs.cw_sessyr=fac.TRM_CDE+fac.YR_CDE)
+-- where fac.fac1_email>'!'
 ORDER BY
     pop.ID_NUM,
-    pop.DIV_CDE;
+    pop.DIV_CDE,
+    cw_sessyr,
+    cw_crs_no;
 
     set nocount off;
     REVERT
