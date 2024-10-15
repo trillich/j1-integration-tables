@@ -80,7 +80,14 @@ cte_attr_detail as (
     WHERE
         ID_NUM in (select id_num from cte_pop)
         and ATTRIB_END_DATE is null
-        and ATTRIB_CDE in ('DEAN','PROM','COMP','HONR','AUST','PION','MACH')
+        and ATTRIB_CDE in (
+            'DEAN',
+            'PROM',
+            'COMP',
+            'HONR', -- FIXME no HONR in ATTRIBUTE_TRANS but there is HON and HONI
+            'AUST',
+            'PION', -- FIXME no PION in ATTRIBUTE_TRANS (yet?)
+            'MACH') -- FIXME no MACH in ATTRIBUTE_TRANS (yet?)
 )
 -- select * from cte_attr_detail order by id_num desc
 ,
@@ -136,28 +143,42 @@ cte_sport as (
 )
 -- select * from cte_sport order by id_num desc
 ,
-cte_emerg as (
-    SELECT
-        ID_NUM,
-        concat(FIRST_NAME,LAST_NAME)    emerg_name,
-        MOBILE_PHONE_NUM                emerg_num
-    FROM
-        EMERG_CONTACT_MAST
+cte_emerg_seq as (
+    SELECT ID_NUM,min(EMER_CON_SEQ) seq
+    FROM EMERG_CONTACT_MAST
     WHERE
         ID_NUM in ( SELECT id_num FROM cte_pop )
-        AND
-        EMER_CON_SEQ = 1 -- FIXME maybe, no data to be sure =1 is canonical
+    GROUP BY ID_NUM
+)
+,
+cte_emerg as (
+    SELECT
+        ecm.ID_NUM,
+        concat(ecm.FIRST_NAME,LAST_NAME)    emerg_name,
+        ecm.MOBILE_PHONE_NUM                emerg_num
+    FROM
+        EMERG_CONTACT_MAST ecm
+        JOIN
+        cte_emerg_seq e
+            on e.ID_NUM = ecm.ID_NUM and e.seq = ecm.EMER_CON_SEQ
 )
 ,
 cte_back2mack as (
     SELECT
         ID_NUM,
         MAX(STU_HANDBOOK)   stu_handbook,
-        MAX(HANDBOOK)       handbook
+        MAX(HANDBOOK)       handbook,
+        MAX(SUBMIT_DATE)    submit_date,
+        MAX(IAMHERE)        iamhere,
+        MAX(REASON)         reason
     FROM
         MCM_BACK_TO_MACK
     WHERE
         ID_NUM in (SELECT id_num FROM cte_pop)
+        AND
+        TRM_CDE = @cterm -- only for current term, is that correct? FIXME
+        AND
+        YR = @cyr
     GROUP BY
         ID_NUM
 )
@@ -189,17 +210,24 @@ SELECT
     'FIXME'                 augustine,
     sport.sport1,
     sport.sport2,
-    nm.is_ferpa_protected   ferpa,
+    nm.IS_FERPA_RESTRICTED,
     emerg.emerg_name        emergency_contact_name,
     emerg.emerg_num         emergency_contact_number,
-    'FIXME'                 parking_pass, -- CM_SA_VEHCL_REG.VP_NUM
-    'FIXME'                 completed_yn, -- back2mack
-    'FIXME'                 submitted_date,
-    'FIXME'                 reason,
-    'FIXME'                 return_to_campus_handbook,
-    'FIXME'                 student_handbook
+    veh.VP_NUM              parking_pass, -- CM_SA_VEHCL_REG.VP_NUM
+    case
+        when b2m.id_num is not null
+        then 'Y'
+        else 'N'
+    end                     completed_yn, -- back2mack exists, FIXME is this correct?
+    b2m.submit_date         submitted_date,
+    b2m.reason              reason,
+    b2m.handbook            return_to_campus_handbook,
+    b2m.stu_handbook        student_handbook
 FROM
     cte_pop pop
+    JOIN
+    namemaster nm
+        on pop.ID_NUM = nm.ID_NUM
     LEFT JOIN
     cte_attr attr
         on pop.ID_NUM = attr.ID_NUM
@@ -215,6 +243,9 @@ FROM
     LEFT JOIN
     cte_back2mack b2m
         on pop.ID_NUM = b2m.ID_NUM
+    LEFT JOIN
+    cte_veh veh
+        on pop.ID_NUM = veh.ID_NUM
 
 ;
 
