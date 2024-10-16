@@ -9,7 +9,7 @@ AS
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
 -- Create date: 10/16/2024
--- Description:	Generate symplicity/handshake export
+-- Description:	Generate handshake export
 -- Modified:
 -- =============================================
 BEGIN
