@@ -75,12 +75,12 @@ cte_slateids as (
 cte_udefs as (
     SELECT
         ID_NUM,
-        udef_3a_1           AUST,
-        udef_3a_2           PION,
-        udef_3a_3           MACH,
-        udef_3a_4           OBRI,
-        udef_3a_5           CATH,
-        udef_5a_1           AUGU
+        udef_3a_1           PION,
+        udef_3a_2           MACH,
+        udef_3a_3           OBRI,
+        udef_3a_4           CATH,
+        udef_3a_5           AUGU,
+        udef_5a_1           FIXME -- google doc "mc-connect field names in j1"
     FROM
         candidate can
     WHERE
@@ -129,8 +129,8 @@ cte_sport_detail
             YR_CDE,
             TRM_CDE,
             dense_rank() over (
-                partition by id_num
-                order by yr_cde,trm_cde desc
+                partition by ID_NUM
+                order by SPORTS_CDE,YR_CDE,TRM_CDE desc
             ) x
         FROM SPORTS_TRACKING st
         WHERE
