@@ -2,15 +2,15 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[MCM_GetASC_stuAcadDaily]
+ALTER PROCEDURE [dbo].[MCM_GetASC_stuAcadDaily]
     @exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
--- Create date: 10/11/2024
--- Description:	Generate ASC exam export for slate
--- Modified:	
+-- Create date: 10/15/2024
+-- Description:	Generate ASC stu-acad export for slate
+-- Modified:
 -- =============================================
 BEGIN
      set nocount on;
@@ -50,7 +50,7 @@ cte_pop as (
                 SELECT distinct id_num
                 FROM STUDENT_CRS_HIST sch
                 WHERE stud_div IN ( 'UG', 'GR' )
-                AND sch.YR_CDE in (2024) -- (@curyr)
+                AND sch.YR_CDE in (@curyr)
                 AND sch.transaction_sts IN ( 'H', 'C', 'D' )
         )
             AND sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
@@ -74,178 +74,155 @@ cte_slateids as (
 )
 -- select * from cte_slateids where sgps > '!';
 ,
-
-cte_acad as (
+cte_reg_seq as (
     SELECT
-        pop.ID_NUM,
-        dh.DIV_CDE                          prog_code,
-        dd.div_desc                         prog_desc,
-        'FIXME'                             subprog_desc,
-        cd.CLASS_DESC                       cl_desc,
-        sm.ENTRANCE_TRM + sm.ENTRANCE_YR    admit_sessyr,
-        sm.ENTRANCE_YR                      admit_yr,
-        sdm.ENTRY_DTE                       enr_date,
-        case when dh.DIV_CDE not in ('NM','GNM') then sdm.ENTRY_DTE else null end
-                                            matric_date,
-        'FIXME'                             acst_desc, -- academic status in CX
-        'FIXME'                             acst_code,
-        dh.MAJOR_1                          major1_code,
-        maj1.MAJOR_MINOR_DESC               major1_desc,
-        dh.MAJOR_2                          major2_code,
-        maj2.MAJOR_MINOR_DESC               major2_desc,
-        dh.MAJOR_3                          major3_code,
-        maj3.MAJOR_MINOR_DESC               major3_desc,
-        dh.CONCENTRATION_1                  conc1_code,
-        cd1.conc_desc                       conc1_desc,
-        dh.CONCENTRATION_2                  conc2_code,
-        cd2.conc_desc                       conc2_desc,
-        dh.MINOR_1                          minor1_code,
-        min1.MAJOR_MINOR_DESC               minor1_desc,
-        dh.MINOR_2                          minor2_code,
-        min2.MAJOR_MINOR_DESC               minor2_desc,
-        dh.MINOR_3                          minor3_code,
-        min3.MAJOR_MINOR_DESC               minor3_desc,
-        dh.DEG_APPLICATION_DTE              deg_app_date,
-        dh.EXPECT_GRAD_TRM + dh.EXPECT_GRAD_YR
-                                            plan_grad_sessyr,
-        'FIXME'                             currenr_code,
-        'FIXME'                             currenr_desc,
-        'FIXME'                             entrtype_code,
-        'FIXME'                             entrtype_desc,
-        sdm.TRANSFER_IN                     transfer,
-        case when hon.ID_NUM > 0 then 'Y' else 'N' end
-                                            honors,
-        sdm.CAREER_HRS_ATTEMPT              cum_att_hrs,
-        sdm.CAREER_HRS_EARNED               cum_earn_hrs,
-        sdm.CAREER_GPA                      cum_gpa
+        ID_NUM,
+        YR_CDE,
+        TRM_CDE,
+        MIN(SEQ_NUM) seq -- or maybe this should be MAX for reg_clearance? FIXME
     FROM
-        cte_pop pop
+        REG_CLEARANCE
+    WHERE
+        ID_NUM in ( SELECT ID_NUM FROM cte_pop )
+        and
+        YR_CDE = @curyr
+        -- and
+        -- TRM_CDE = @cterm
+    GROUP BY
+        ID_NUM,
+        YR_CDE,
+        TRM_CDE
+),
+cte_reg_detail as (
+    SELECT
+        seq.ID_NUM,
+        reg.[USER_NAME],
+        reg.JOB_TIME,
+        reg.YR_CDE,
+        reg.TRM_CDE
+    FROM
+        REG_CLEARANCE reg
         JOIN
-        STUDENT_MASTER sm WITH (nolock)
-            on (pop.ID_NUM = sm.ID_NUM )
-        JOIN
-        DEGREE_HISTORY dh WITH (nolock)
-            on (pop.ID_NUM = dh.ID_NUM 
-                and pop.DIV_CDE = dh.DIV_CDE
-                and CUR_DEGREE = 'Y' -- FIXME do we need this in a CASE statement instead?
-            )
-        JOIN
-        STUDENT_DIV_MAST sdm WITH (nolock)
-            ON ( dh.id_num = sdm.id_num
-                AND dh.div_cde = sdm.div_cde
-                AND sdm.is_student_div_active = 'Y'
-            )
-        JOIN
-        DIVISION_DEF dd WITH (nolock)
-            ON ( pop.DIV_CDE = dd.DIV_CDE )
-        LEFT JOIN
-        CLASS_DEFINITION cd
-            ON ( sdm.CLASS_CDE = cd.CLASS_CDE )
-        LEFT JOIN
-        MAJOR_MINOR_DEF maj1 WITH (nolock)
-            on ( dh.MAJOR_1 = maj1.MAJOR_CDE )
-        LEFT JOIN
-        MAJOR_MINOR_DEF maj2 WITH (nolock)
-            on ( dh.MAJOR_2 = maj2.MAJOR_CDE )
-        LEFT JOIN
-        MAJOR_MINOR_DEF maj3 WITH (nolock)
-            on ( dh.MAJOR_3 = maj3.MAJOR_CDE )
-        LEFT JOIN
-        CONCENTRATION_DEF cd1 WITH (nolock)
-            on ( dh.concentration_1 = cd1.conc_cde )
-        LEFT JOIN
-        CONCENTRATION_DEF cd2 WITH (nolock)
-            on ( dh.concentration_2 = cd2.conc_cde )
-        LEFT JOIN
-        MAJOR_MINOR_DEF min1 WITH (nolock)
-            on ( dh.MINOR_1 = min1.MAJOR_CDE )
-        LEFT JOIN
-        MAJOR_MINOR_DEF min2 WITH (nolock)
-            on ( dh.MINOR_2 = min2.MAJOR_CDE )
-        LEFT JOIN
-        MAJOR_MINOR_DEF min3 WITH (nolock)
-            on ( dh.MINOR_3 = min3.MAJOR_CDE )
-        LEFT JOIN
-        ATTRIBUTE_TRANS hon WITH (nolock)
-            on ( pop.ID_NUM = hon.ID_NUM
-                and hon.ATTRIB_CDE = 'HON'
-                and hon.ATTRIB_BEGIN_DTE <= getdate()
-                -- FIXME should this be linked via sess/yr?
-            )
+        cte_reg_seq seq
+            on reg.ID_NUM = seq.ID_NUM 
+            and reg.YR_CDE = seq.YR_CDE 
+            and reg.TRM_CDE = seq.TRM_CDE 
+            and reg.SEQ_NUM = seq.seq -- if there's more than one seq, we just want the 'priority' one per semester
 )
--- select * from cte_acad where conc2_code>'!';
+,
+cte_reg as (
+    SELECT
+        ID_NUM,
+        max(case when TRM_CDE='FA' then [USER_NAME] else null end     ) fa_regclr_by,
+        max(case when TRM_CDE='FA' then [JOB_TIME] else null end      ) fa_regclr_date,
+        max(case when TRM_CDE='FA' then [TRM_CDE]+@curyr else null end) fa_regclr,
+        max(case when TRM_CDE='SP' then [USER_NAME] else null end     ) sp_regclr_by,
+        max(case when TRM_CDE='SP' then [JOB_TIME] else null end      ) sp_regclr_date,
+        max(case when TRM_CDE='SP' then [TRM_CDE]+@curyr else null end) sp_regclr
+    FROM
+        cte_reg_detail
+    GROUP BY
+        ID_NUM
+)
+,
+cte_terms_detail as (
+    SELECT
+    -- top 1000
+        ID_NUM,
+        TRM_CDE,
+        DIV_CDE + TRM_CDE       semyr,
+        LOCAL_HRS_GPA           gpa,
+        TRM_HRS_ATTEMPT         attempted,
+        TRM_HRS_ATTEMPT         reg_hrs,
+        TRM_HRS_EARNED          earned
+    FROM
+        STUD_TERM_SUM_DIV
+    -- order by id_num desc
+    WHERE
+        ID_NUM in ( select ID_NUM from cte_pop )
+        AND
+        YR_CDE = @curyr
+)
+,
+cte_terms as (
+    SELECT
+        ID_NUM,
+        MAX(case when TRM_CDE='FA' then semyr else null end) fa_stuacad_semyr,
+        MAX(case when TRM_CDE='FA' then gpa else null end  ) fa_stuacad_gpa,
+        MAX(case when TRM_CDE='FA' then attempted else null end) fa_stuacad_att_hrs,
+        MAX(case when TRM_CDE='FA' then reg_hrs else null end) fa_stuacad_reg_hrs,
+        MAX(case when TRM_CDE='FA' then earned else null end   ) fa_stuacad_earn_hrs,
+        MAX(case when TRM_CDE='SP' then semyr else null end) sp_stuacad_semyr,
+        MAX(case when TRM_CDE='SP' then gpa else null end  ) sp_stuacad_gpa,
+        MAX(case when TRM_CDE='SP' then attempted else null end) sp_stuacad_att_hrs,
+        MAX(case when TRM_CDE='SP' then reg_hrs else null end) sp_stuacad_reg_hrs,
+        MAX(case when TRM_CDE='SP' then earned else null end   ) sp_stuacad_earn_hrs,
+        MAX(case when TRM_CDE='SU' then semyr else null end) su_stuacad_semyr,
+        MAX(case when TRM_CDE='SU' then gpa else null end  ) su_stuacad_gpa,
+        MAX(case when TRM_CDE='SU' then attempted else null end) su_stuacad_att_hrs,
+        MAX(case when TRM_CDE='SU' then reg_hrs else null end) su_stuacad_reg_hrs,
+        MAX(case when TRM_CDE='SU' then earned else null end   ) su_stuacad_earn_hrs,
+        MAX(case when TRM_CDE='WI' then semyr else null end) wi_stuacad_semyr,
+        MAX(case when TRM_CDE='WI' then gpa else null end  ) wi_stuacad_gpa,
+        MAX(case when TRM_CDE='WI' then attempted else null end) wi_stuacad_att_hrs,
+        MAX(case when TRM_CDE='WI' then reg_hrs else null end) wi_stuacad_reg_hrs,
+        MAX(case when TRM_CDE='WI' then earned else null end   ) wi_stuacad_earn_hrs
+    FROM
+        cte_terms_detail
+    GROUP BY
+        ID_NUM
+)
 
 SELECT
     slate.SUG                       slate_id,
     slate.SGPS                      slate_guid_asc,
     pop.ID_NUM                      cx_id,
-    prog_code,
-    prog_desc,
-    subprog_desc,
-    cl_desc,
-    admit_sessyr,
-    admit_yr,
-    enr_date,
-    matric_date,
-    acst_desc,
-    acst_code,
-    major1_code,
-    major1_desc,
-    major2_code,
-    major2_desc,
-    major3_code,
-    major3_desc,
-    conc1_code,
-    conc1_desc,
-    conc2_code,
-    conc2_desc,
-    minor1_code,
-    minor1_desc,
-    minor2_code,
-    minor2_desc,
-    minor3_code,
-    minor3_desc,
-    deg_app_date,
-    plan_grad_sessyr,
-    prim_adv,
-    prim_adv_email,
-    sec_adv,
-    sec_adv_email,
-    career_adv,
-    career_adv_email,
-    leave_reason,
-    leave_date,
-    'FIXME'                         online,
-    currenr_code,
-    currenr_desc,
-    entrtype_code,
-    entrtype_desc,
-    honors,
-    transfer,
-    'FIXME'                         adm_hsg_type,
-    'FIXME'                         adm_plansessyr,
-    'FIXME'                         adm_withpaid,
-    'FIXME'                         degree_earn,
-    'FIXME'                         degree_sessyr,
-    cum_att_hrs,
-    cum_earn_hrs,
-    cum_gpa
+    pop.DIV_CDE                     prog_code,
+
+    reg.fa_regclr,
+    reg.fa_regclr_by,
+    reg.fa_regclr_date,
+
+    reg.sp_regclr,
+    reg.sp_regclr_by,
+    reg.sp_regclr_date,
+
+    terms.fa_stuacad_att_hrs,
+    terms.fa_stuacad_earn_hrs,
+    terms.fa_stuacad_gpa,
+    terms.fa_stuacad_reg_hrs,
+    terms.fa_stuacad_semyr,
+
+    terms.sp_stuacad_att_hrs,
+    terms.sp_stuacad_earn_hrs,
+    terms.sp_stuacad_gpa,
+    terms.sp_stuacad_reg_hrs,
+    terms.sp_stuacad_semyr,
+
+    terms.su_stuacad_att_hrs,
+    terms.su_stuacad_earn_hrs,
+    terms.su_stuacad_gpa,
+    terms.su_stuacad_reg_hrs,
+    terms.su_stuacad_semyr,
+
+    terms.wi_stuacad_att_hrs,
+    terms.wi_stuacad_earn_hrs,
+    terms.wi_stuacad_gpa,
+    terms.wi_stuacad_reg_hrs,
+    terms.wi_stuacad_semyr
+
 FROM
     cte_pop pop
-    JOIN
-    cte_acad acad
-    on (pop.ID_NUM=acad.ID_NUM and pop.DIV_CDE=acad.prog_code)
-    LEFT JOIN
-    cte_adv adv
-    on (pop.ID_NUM=adv.ID_NUM)
-    LEFT JOIN
-    cte_loa loa
-    on (pop.ID_NUM=loa.ID_NUM)
     LEFT JOIN
     cte_slateids slate
-    on (pop.ID_NUM=slate.ID_NUM)
-ORDER BY
-    pop.ID_NUM, pop.DIV_CDE;
+        on pop.ID_NUM = slate.ID_NUM
+    LEFT JOIN
+    cte_reg reg
+        on pop.ID_NUM = reg.ID_NUM
+    LEFT JOIN
+    cte_terms terms
+        on pop.ID_NUM = terms.ID_NUM
+;
 
     set nocount off;
     REVERT

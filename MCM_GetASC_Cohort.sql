@@ -101,7 +101,7 @@ cte_attr_detail as (
             'DEAN',
             'PROM',
             'COMP',
-            'HONR', -- FIXME no HONR in ATTRIBUTE_TRANS but there is HON and HONI
+            'HON ', -- FIXME no HONR in ATTRIBUTE_TRANS but there is HON and HONI
             'AUST')
 )
 -- select * from cte_attr_detail order by id_num desc
@@ -112,7 +112,7 @@ cte_attr as (
         max(case when ATTRIB_CDE='DEAN' then ATTRIB_CDE else null end) DEAN,
         max(case when ATTRIB_CDE='PROM' then ATTRIB_CDE else null end) PROM,
         max(case when ATTRIB_CDE='COMP' then ATTRIB_CDE else null end) COMP,
-        max(case when ATTRIB_CDE='HONR' then ATTRIB_CDE else null end) HONR,
+        max(case when ATTRIB_CDE='HON ' then ATTRIB_CDE else null end) HONR,
         max(case when ATTRIB_CDE='AUST' then ATTRIB_CDE else null end) AUST
     FROM
         cte_attr_detail
