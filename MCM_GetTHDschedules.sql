@@ -54,7 +54,7 @@ as (
             SECTION_SCHEDULES ss with (nolock)
         where
             ss.YR_CDE = @curyr and
-            ss.TRM_CDE = left(@cterm,2) -- FIXME
+            ss.TRM_CDE = left(@cterm,2)
     ) x
 ),
 cte_course_types

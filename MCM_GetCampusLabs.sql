@@ -83,7 +83,6 @@ cte_reg_stu
             TABLE_DETAIL td WITH (nolock)
                 ON idd.school_cde = td.table_value
                     AND td.COLUMN_NAME = 'SCHOOL_CDE'
-                    -- table_desc is 'School of Business' or Arts&Sciences etc, need to omit DAY subprogram FIXME
         WHERE sm.id_num in (
                 SELECT distinct id_num
                 FROM STUDENT_CRS_HIST sch

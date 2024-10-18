@@ -10,7 +10,7 @@ AS
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
 -- Create date: 9/10/2024
--- Description:	Generate Camput Directory data export
+-- Description:	Generate Campus Directory data export
 -- Modified:	
 -- 
 -- =============================================
@@ -25,7 +25,7 @@ BEGIN
             n.FIRST_NAME,
             u.EMP_TITLE         personnel_title,
             -- u.EMP_HOME_DEPT,
-            'FIXME' department_long_text,
+            'FIXME'             department_long_text,
             -- u.EMP_BUILD,
             b.BUILDING_DESC     building_text,
             u.EMP_OFFICE        office,
