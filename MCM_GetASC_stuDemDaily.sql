@@ -29,7 +29,7 @@ BEGIN
 -- *EML with @merrimack.edu
 -- stage=DEPT NMDEP
 
-with
+WITH
 cteStuCur as (
 --get current registered students
 select DISTINCT sch.ID_NUM, dh.DIV_CDE
@@ -110,14 +110,15 @@ cte_bio as (
         slt.SGPS            slate_guid_asc,
         nm.ID_NUM           cx_id,
         nm.FIRST_NAME       first_name,
-        nm.FIRST_NAME       pref_first_name, -- FIXME
+        coalesce(nm.PREFERRED_NAME,nm.FIRST_NAME)
+                            pref_first_name,
         nm.LAST_NAME        last_name,
         nm.MIDDLE_NAME      middle_name,
         nm.SUFFIX           suffix_name,
         email.username      network_username,
         bm.BIRTH_DTE        birthday,
         bm.GENDER           gender,
-        eth.IPEDS_Desc      ethnicity, -- FIXME maybe? on CX this was e.g. "Black,Asian" comma-separated combined descrips
+        ethnic.IPEDS_Desc   ethnicity,
         CASE
             WHEN ethnic.ethnic_rpt_def_num = -1
             THEN 'Y'
@@ -179,9 +180,6 @@ cte_bio as (
         LEFT JOIN addressmaster aml WITH (nolock)
             ON naml.addressmasterappid = aml.appid
 
-        LEFT JOIN MCM_Latest_EthnicRace_Detail eth with (nolock)
-            on nm.ID_NUM = eth.id_num
-        
         LEFT JOIN cte_slateids slt
             on nm.ID_NUM = slt.ID_NUM
 
@@ -314,17 +312,3 @@ END
 
 ;
 GO
--- select year(getdate());
-
--- select IPEDS_Desc,count(*)
--- from mcm_latest_ethnicrace_detail
--- group by IPEDS_Desc
-
--- select top 100
---     nm.id_num,
---     string_agg(ADDR_CDE,',') addr_codes
--- from NameMaster nm
---     join
---     nameAddressMaster nam
---     on nm.ID_NUM = nam.ID_NUM
--- group by nm.id_num
