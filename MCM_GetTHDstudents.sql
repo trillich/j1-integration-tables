@@ -35,7 +35,7 @@ cte_loa
                          x.LEAVE_END_DTE,
                          x.ABSENCE_CDE,
                          d.ABSENCE_DESC
-         FROM   leaveofabsence x
+         FROM   leaveofabsence x with (nolock)
                 LEFT JOIN absence_def d WITH (nolock)
                        ON ( x.absence_cde = d.absence_cde )
          WHERE  ( x.leave_begin_dte <= Getdate()
@@ -43,7 +43,7 @@ cte_loa
                          OR x.leave_end_dte > Getdate() ) )),
 cte_reg_stu
      AS (SELECT DISTINCT id_num
-         FROM   student_crs_hist
+         FROM   student_crs_hist with (nolock)
          WHERE  stud_div IN ( 'UG', 'GR' )
                 AND YR_CDE = @curyr
                 AND TRM_CDE = left(@cterm,2)
@@ -72,8 +72,8 @@ cte_can
                 -- END                                         class,
                 -- hist_stage_dte,
                 CONVERT(VARCHAR(10), c.hist_stage_dte, 101) enrollment_date
-         FROM   candidacy c
-                LEFT JOIN STUDENT_MASTER s
+         FROM   candidacy c with (nolock)
+                LEFT JOIN STUDENT_MASTER s with (nolock)
                        ON ( c.id_num = s.ID_NUM )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
                 AND c.YR_CDE = @curyr
@@ -87,7 +87,7 @@ cte_can
 cte_sport
     AS (
         SELECT id_num,count(*) ct
-        from SPORTS_TRACKING
+        from SPORTS_TRACKING with (nolock)
         where yr_cde=@curyr and TRM_CDE=left(@cterm,2)
         group by id_num
     ),
@@ -258,7 +258,7 @@ cte_curstu
                 inner JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
                 LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
-                  ON (bm.ID_NUM = bmu.ID_NUM)
+                       ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num
                           AND ssa.sess_cde = @cterm

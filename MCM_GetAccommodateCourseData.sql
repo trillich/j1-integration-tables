@@ -20,7 +20,7 @@ BEGIN
 -- defaults for testing:
 declare @curyr int; -- = 2024;
 declare @cterm varchar(6); -- = 'FA';
--- declare @daysago int = 68;
+-- declare @daysago int = 111;
 select @cterm = dbo.MCM_FN_CALC_TRM('C'); -- YYYYSS for example: 2024FA
 -- print @cterm;
 set @curyr = cast(left(@cterm,4) as int);
@@ -108,7 +108,7 @@ AS (
     FROM
         student_crs_hist sch with (nolock)
         join
-        section_master sm
+        section_master sm with (nolock)
         on (sch.CRS_CDE = sm.CRS_CDE and sch.YR_CDE = sm.YR_CDE and sch.TRM_CDE = sm.TRM_CDE)
     WHERE  sch.stud_div IN ( 'UG', 'GR' )
         AND sch.YR_CDE = @curyr

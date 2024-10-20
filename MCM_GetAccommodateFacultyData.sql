@@ -64,7 +64,7 @@ cte_fac as (
     FROM
         FACULTY_LOAD_TABLE fl with (nolock)
         JOIN
-        cte_reg_stu rs
+        cte_reg_stu rs with (nolock)
         on (fl.CRS_CDE = rs.CRS_CDE and fl.YR_CDE = rs.YR_CDE and fl.TRM_CDE = rs.TRM_CDE)
         JOIN
         NameMaster nm with (nolock)

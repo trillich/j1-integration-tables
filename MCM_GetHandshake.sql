@@ -29,17 +29,20 @@ WITH
 cteStuCur as (
     --get current registered students
     select DISTINCT sch.ID_NUM, dh.DIV_CDE
-    from STUDENT_CRS_HIST sch
-        inner join DEGREE_HISTORY dh on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
+    from STUDENT_CRS_HIST sch with (nolock)
+    inner join DEGREE_HISTORY dh with (nolock)
+        on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
     where (sch.YR_CDE = @curyr)
         and sch.TRANSACTION_STS IN ('C', 'H', 'D')
 ),
 cteStuPrev as (
     --get previous term registered students who don't exist in the current student pop
     select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE --max puts UG first since they can be registered for UG and GR classes at the same time.
-    from STUDENT_CRS_HIST sch
-        inner join DEGREE_HISTORY dh on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
-        left join cteStuCur on sch.ID_NUM = cteStuCur.ID_NUM
+    from STUDENT_CRS_HIST sch with (nolock)
+    inner join DEGREE_HISTORY dh with (nolock)
+        on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
+    left join cteStuCur with (nolock)
+        on sch.ID_NUM = cteStuCur.ID_NUM
     where (sch.YR_CDE = @prvyr)
         and sch.TRANSACTION_STS IN ('C', 'H', 'D')
         and cteStuCur.ID_NUM is null
@@ -49,9 +52,11 @@ cteAdm as (
     --get deposited students for the upcoming term that do not exist in the current term 
     --just in case they switched from UG to GR between current term and next term
 	select cand.ID_NUM, cand.DIV_CDE
-	from candidacy cand
-		inner join AlternateContactMethod acm on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
-		left join cteStuCur on cteStuCur.ID_NUM = cand.ID_NUM
+	from candidacy cand with (nolock)
+    inner join AlternateContactMethod acm with (nolock)
+        on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
+    left join cteStuCur with (nolock)
+        on cteStuCur.ID_NUM = cand.ID_NUM
 	where (cand.YR_CDE = @curyr and cand.TRM_CDE = @nterm
 		and cand.CUR_CANDIDACY = 'Y'
 		and cand.stage in ('DEPT', 'NMDEP'))
@@ -137,7 +142,7 @@ cte_acad as (
     FROM
         cte_pop pop
         join
-        DEGREE_HISTORY dh
+        DEGREE_HISTORY dh with (nolock)
             on (pop.ID_NUM = dh.ID_NUM and pop.DIV_CDE = dh.DIV_CDE)
         LEFT JOIN
         MAJOR_MINOR_DEF maj1 WITH (nolock)
@@ -164,7 +169,7 @@ cte_acad as (
         MAJOR_MINOR_DEF min3 WITH (nolock)
             on ( dh.MINOR_3 = min3.MAJOR_CDE )
         LEFT JOIN
-        TABLE_DETAIL td
+        TABLE_DETAIL td with (nolock)
             on ( dh.EXIT_REASON = td.TABLE_VALUE and td.COLUMN_NAME = 'exit_reason' )
     WHERE
         dh.CUR_DEGREE = 'Y'

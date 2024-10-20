@@ -16,7 +16,7 @@ AS
 BEGIN
         set nocount on;
 
-        -- declare @daysago int = 80;
+        -- declare @daysago int = 111;
 
         declare @cterm as varchar(6) = dbo.MCM_FN_CALC_TRM('CF') -- "current fall"
         declare @curyr as int
@@ -46,7 +46,7 @@ cte_reg_stu
                 YR_CDE,
                 TRM_CDE,
                 TRANSACTION_STS
-         FROM   student_crs_hist sch
+         FROM   student_crs_hist sch with (nolock)
          WHERE  stud_div IN ( 'UG', 'GR' )
                 AND (
                     ( YR_CDE = @curyr and TRM_CDE = @cterm )
@@ -82,7 +82,7 @@ cte_sched
         from
             SECTION_SCHEDULES ss with (nolock)
             JOIN
-            section_master sm
+            section_master sm with (nolock)
             on ( ss.CRS_CDE = sm.CRS_CDE and ss.YR_CDE = sm.YR_CDE and ss.TRM_CDE = sm.TRM_CDE )
         where
             (ss.YR_CDE = @curyr and ss.TRM_CDE = @cterm)

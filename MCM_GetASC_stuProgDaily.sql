@@ -50,7 +50,7 @@ cte_pop as (
                 SELECT distinct id_num
                 FROM STUDENT_CRS_HIST sch
                 WHERE stud_div IN ( 'UG', 'GR' )
-                AND sch.YR_CDE in (2024) -- (@curyr)
+                AND sch.YR_CDE in (@curyr)
                 AND sch.transaction_sts IN ( 'H', 'C', 'D' )
         )
             AND sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
@@ -114,22 +114,22 @@ cte_adv as (
         ON pop.ID_NUM = ast1.ID_NUM AND pop.DIV_CDE = ast1.DIV_CDE AND ast1.ADVISOR_NUM = 1
     LEFT JOIN NameMaster advnm1 WITH (nolock)
         ON ast1.ADVISOR_ID = advnm1.ID_NUM
-    LEFT JOIN alternatecontactmethod acm1
-        WITH (nolock) ON advnm1.APPID = acm1.NameMasterAppID AND acm1.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm1 WITH (nolock)
+        ON advnm1.APPID = acm1.NameMasterAppID AND acm1.ADDR_CDE = '*EML'
     -- secondary advisor:
     LEFT JOIN ADVISOR_STUD_TABLE ast2 WITH (nolock)
         ON pop.ID_NUM = ast2.ID_NUM AND pop.DIV_CDE = ast2.DIV_CDE AND ast2.ADVISOR_NUM = 2
     LEFT JOIN NameMaster advnm2 WITH (nolock)
         ON ast2.ADVISOR_ID = advnm2.ID_NUM
-    LEFT JOIN alternatecontactmethod acm2
-        WITH (nolock) ON advnm2.APPID = acm2.NameMasterAppID AND acm2.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm2 WITH (nolock)
+        ON advnm2.APPID = acm2.NameMasterAppID AND acm2.ADDR_CDE = '*EML'
     -- career advisor:
     LEFT JOIN ADVISOR_STUD_TABLE ast3 WITH (nolock)
         ON pop.ID_NUM = ast3.ID_NUM AND pop.DIV_CDE = ast3.DIV_CDE AND ast3.ADVISOR_NUM = 3
     LEFT JOIN NameMaster advnm3 WITH (nolock)
         ON ast3.ADVISOR_ID = advnm3.ID_NUM
-    LEFT JOIN alternatecontactmethod acm3
-        WITH (nolock) ON advnm3.APPID = acm3.NameMasterAppID AND acm3.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm3 WITH (nolock)
+        ON advnm3.APPID = acm3.NameMasterAppID AND acm3.ADDR_CDE = '*EML'
 )
 -- select * from cte_adv;
 ,
@@ -197,7 +197,7 @@ cte_acad as (
         DIVISION_DEF dd WITH (nolock)
             ON ( pop.DIV_CDE = dd.DIV_CDE )
         LEFT JOIN
-        CLASS_DEFINITION cd
+        CLASS_DEFINITION cd with (nolock)
             ON ( sdm.CLASS_CDE = cd.CLASS_CDE )
         LEFT JOIN
         MAJOR_MINOR_DEF maj1 WITH (nolock)

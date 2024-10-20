@@ -81,7 +81,7 @@ cte_reg_seq as (
         TRM_CDE,
         MIN(SEQ_NUM) seq -- or maybe this should be MAX for reg_clearance? FIXME
     FROM
-        REG_CLEARANCE
+        REG_CLEARANCE with (nolock)
     WHERE
         ID_NUM in ( SELECT ID_NUM FROM cte_pop )
         and
@@ -101,7 +101,7 @@ cte_reg_detail as (
         reg.YR_CDE,
         reg.TRM_CDE
     FROM
-        REG_CLEARANCE reg
+        REG_CLEARANCE reg with (nolock)
         JOIN
         cte_reg_seq seq
             on reg.ID_NUM = seq.ID_NUM 
@@ -136,7 +136,7 @@ cte_terms_detail as (
         TRM_HRS_ATTEMPT         reg_hrs,
         TRM_HRS_EARNED          earned
     FROM
-        STUD_TERM_SUM_DIV
+        STUD_TERM_SUM_DIV with (nolock)
     -- order by id_num desc
     WHERE
         ID_NUM in ( select ID_NUM from cte_pop )

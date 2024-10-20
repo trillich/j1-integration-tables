@@ -43,7 +43,7 @@ BEGIN
                 AND acm.addr_cde = '*EML'
                 AND acm.alternatecontact LIKE '%@merrimack.edu'
             left join
-            BUILDING_MASTER b
+            BUILDING_MASTER b with (nolock)
             on u.EMP_BUILD = b.BLDG_CDE
         -- WHERE
         --     EMP_HIRE_DTE < getdate()

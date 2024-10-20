@@ -73,9 +73,9 @@ as (
     from section_master secm with (nolock)
         left join TABLE_DETAIL td with (nolock)
         on secm.CRS_TYPE = td.TABLE_VALUE AND td.COLUMN_NAME = 'crs_meeting_type'
-        left join NameMaster inm
+        left join NameMaster inm with (nolock)
         on secm.LEAD_INSTRUCTR_ID = inm.ID_NUM
-        left join AlternateContactMethod iacm
+        left join AlternateContactMethod iacm with (nolock)
         on secm.LEAD_INSTRUCTR_ID = iacm.ID_NUM and iacm.ADDR_CDE='*EML'
     where
         secm.YR_CDE = @curyr and secm.TRM_CDE = left(@cterm,2)

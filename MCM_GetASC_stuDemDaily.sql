@@ -33,16 +33,18 @@ WITH
 cteStuCur as (
 --get current registered students
 select DISTINCT sch.ID_NUM, dh.DIV_CDE
-from STUDENT_CRS_HIST sch
-	inner join DEGREE_HISTORY dh on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
+from STUDENT_CRS_HIST sch with (nolock)
+	inner join DEGREE_HISTORY dh with (nolock)
+    on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
 where (sch.YR_CDE = @curyr)
 	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
 ),
 cteStuPrev as (
 --get previous term registered students who don't exist in the current student pop
 select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE --max puts UG first since they can be registered for UG and GR classes at the same time.
-from STUDENT_CRS_HIST sch
-	inner join DEGREE_HISTORY dh on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
+from STUDENT_CRS_HIST sch with (nolock)
+	inner join DEGREE_HISTORY dh with (nolock)
+    on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
 	left join cteStuCur on sch.ID_NUM = cteStuCur.ID_NUM
 where (sch.YR_CDE = @prvyr)
 	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
@@ -53,8 +55,9 @@ cteAdm as (
 --get deposited students for the upcoming term that do not exist in the current term 
 --just in case they switched from UG to GR between current term and next term
 	select cand.ID_NUM, cand.DIV_CDE
-	from candidacy cand
-		inner join AlternateContactMethod acm on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
+	from candidacy cand with (nolock)
+		inner join AlternateContactMethod acm with (nolock)
+        on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
 		left join cteStuCur on cteStuCur.ID_NUM = cand.ID_NUM
 	where (cand.YR_CDE = @curyr and cand.TRM_CDE = @nterm
 		and cand.CUR_CANDIDACY = 'Y'
@@ -198,9 +201,9 @@ cte_roomies_detail as (
         -- sr.ROOMMATE_ID,
         STRING_AGG(concat(nm.FIRST_NAME,' ',nm.LAST_NAME),',') roommates
     FROM
-        STUD_ROOMMATES sr
+        STUD_ROOMMATES sr with (nolock)
         join
-        NameMaster nm
+        NameMaster nm with (nolock)
         on sr.ROOMMATE_ID = nm.ID_NUM
     WHERE
         sr.ID_NUM in ( select id_num from cte_pop )
@@ -237,7 +240,7 @@ cte_hold_detail as (
         ID_NUM,
         HOLD_CDE
     FROM
-        HOLD_TRAN
+        HOLD_TRAN with (nolock)
     WHERE
         ID_NUM in (select id_num from cte_pop) and
         END_DTE is null AND
@@ -264,7 +267,7 @@ cte_back2mack as (
         IAMHERE,
         SUBMIT_DATE as IAMHERE_DATE -- FIXME? not sure which date field to use
     FROM
-        MCM_BACK_TO_MACK
+        MCM_BACK_TO_MACK with (nolock)
     WHERE
         ID_NUM in ( select ID_NUM from cte_pop ) AND
         TRM_CDE = right(@cterm,2) AND

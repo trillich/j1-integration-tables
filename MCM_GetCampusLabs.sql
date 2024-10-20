@@ -272,12 +272,12 @@ cte_res
                 END         LocalResidencyStatus,
             rm.ROOM_DESC
         FROM
-            STUD_SESS_ASSIGN ssa
+            STUD_SESS_ASSIGN ssa with (nolock)
             left join
-            ROOM_ASSIGN ra
+            ROOM_ASSIGN ra with (nolock)
                 on ssa.SESS_CDE = ra.SESS_CDE and ssa.ID_NUM = ra.ID_NUM
             left join
-            ROOM_MASTER rm
+            ROOM_MASTER rm with (nolock)
                 on rm.BLDG_CDE = ra.BLDG_CDE and rm.ROOM_CDE = ra.ROOM_CDE
         WHERE
             ssa.ID_NUM in ( select id_num from cte_reg_stu )

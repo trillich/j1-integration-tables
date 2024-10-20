@@ -40,7 +40,7 @@ cte_stu_population
 
         SELECT DISTINCT
                 ID_NUM
-        FROM    student_crs_hist sch
+        FROM    student_crs_hist sch with (nolock)
         WHERE   stud_div IN ( 'UG', 'GR' )
                 AND (
                     ( YR_CDE = @curyr and TRM_CDE = @cterm )
@@ -58,7 +58,7 @@ cte_loa
                         x.absence_cde,
                         d.absence_desc
         FROM
-            leaveofabsence x
+            leaveofabsence x with (nolock)
         JOIN
             cte_stu_population stu
                 ON x.ID_NUM = stu.ID_NUM
@@ -72,9 +72,9 @@ cte_loa
 cte_sport
     AS (
         SELECT DISTINCT st.id_num
-        FROM SPORTS_TRACKING st
+        FROM SPORTS_TRACKING st with (nolock)
             join
-            cte_stu_population stu
+            cte_stu_population stu with (nolock)
             on st.ID_NUM = stu.ID_NUM
         WHERE
             (st.YR_CDE = @curyr and st.TRM_CDE = @cterm)
@@ -102,7 +102,7 @@ cte_info
         FROM
         cte_stu_population stu
         JOIN
-        namemaster nm
+        namemaster nm with (nolock)
             on nm.ID_NUM = stu.ID_NUM
         LEFT JOIN
         biograph_master bm WITH (nolock)
@@ -139,7 +139,7 @@ cte_dorm
             ra.bldg_cde,
             ra.room_cde
         FROM
-            ROOM_ASSIGN ra
+            ROOM_ASSIGN ra with (nolock)
             join
             cte_stu_population stu
                 on ra.ID_NUM = stu.ID_NUM
@@ -157,7 +157,7 @@ cte_emails
             max(case when ADDR_CDE = '*EML' then AlternateContact else '' end) email1,
             max(case when ADDR_CDE = 'PEML' then AlternateContact else '' end) email2
         from
-            AlternateContactMethod eml
+            AlternateContactMethod eml with (nolock)
             join
             cte_stu_population stu
             on eml.ID_NUM = stu.ID_NUM

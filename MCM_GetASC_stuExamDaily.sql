@@ -64,7 +64,7 @@ cte_slateids as (
         max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
         max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
     FROM
-        ALTERNATE_IDENTIFIER ai
+        ALTERNATE_IDENTIFIER ai with (nolock)
     WHERE
         ai.ID_NUM in ( select ID_NUM from cte_pop )
         and ai.IDENTIFIER_TYPE in ('SUG','SGPS') -- FIXME no SGPS data in J1CONV, need to confirm with real data
@@ -78,7 +78,7 @@ cte_fye as (
     SELECT
         ID_NUM
     FROM
-        STUDENT_CRS_HIST sch
+        STUDENT_CRS_HIST sch with (nolock)
     WHERE
         ID_NUM in ( SELECT ID_NUM FROM cte_pop )
         and CRS_CDE like 'FYE%1050%' -- FIXME is this the right pattern?
@@ -94,8 +94,9 @@ cte_exam_detail as (
         d.TST_ELEM,
         t.DTE_TAKEN
     FROM
-        TEST_SCORES t JOIN
-        TEST_SCORES_DETAIL d
+        TEST_SCORES t  with (nolock)
+        JOIN
+        TEST_SCORES_DETAIL d with (nolock)
             on (t.id_num=d.id_num and t.tst_cde=d.tst_cde and t.tst_seq=d.tst_seq)
     WHERE
         t.ID_NUM in ( select ID_NUM from cte_pop )

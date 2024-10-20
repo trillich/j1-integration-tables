@@ -34,15 +34,15 @@ WITH cte_loa
                          x.leave_begin_dte,
                          x.absence_cde,
                          d.absence_desc
-         FROM   leaveofabsence x
-                LEFT JOIN absence_def d WITH (nolock)
-                       ON ( x.absence_cde = d.absence_cde )
-         WHERE  ( x.leave_begin_dte <= Getdate()
-                  AND ( x.leave_end_dte IS NULL
-                         OR x.leave_end_dte > Getdate() ) )),
+       FROM   leaveofabsence x with (nolock)
+       LEFT JOIN absence_def d WITH (nolock)
+              ON ( x.absence_cde = d.absence_cde )
+       WHERE  ( x.leave_begin_dte <= Getdate()
+              AND ( x.leave_end_dte IS NULL
+                     OR x.leave_end_dte > Getdate() ) )),
  cte_reg_stu
      AS (SELECT DISTINCT id_num
-         FROM   student_crs_hist
+         FROM   student_crs_hist with (nolock)
          WHERE  stud_div IN ( 'UG', 'GR' )
                 AND yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND transaction_sts IN ( 'P', 'H', 'C', 'D' )),
@@ -64,9 +64,9 @@ WITH cte_loa
                 END                                         class,
                 -- hist_stage_dte,
                 CONVERT(VARCHAR(10), c.hist_stage_dte, 101) enrollment_date
-         FROM   candidacy c
-                LEFT JOIN cte_reg_stu r
-                       ON ( c.id_num = r.id_num )
+       FROM   candidacy c with (nolock)
+       LEFT JOIN cte_reg_stu r with (nolock)
+              ON ( c.id_num = r.id_num )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
                 AND c.yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND c.stage IN ( 'DEPT', 'NMDEP' )
@@ -223,7 +223,7 @@ WITH cte_loa
                   ON nm.id_num = rs.id_num
                 JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
-                LEFT JOIN BIOGRAPH_MASTER_UDF bmu
+                LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
                   ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num
@@ -300,8 +300,8 @@ WITH cte_loa
                        ON ( dh.concentration_1 = conc1.conc_cde )
                 LEFT JOIN concentration_def conc2 WITH (nolock)
                        ON ( dh.concentration_2 = conc2.conc_cde )
-				LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
-					   ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
+                LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
+                       ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
  cte_newstu
      AS (SELECT 
 				--'NEW'                                   grp, --for debugging
@@ -439,7 +439,7 @@ WITH cte_loa
                   ON nm.id_num = can.id_num
                 JOIN cte_alt_ctc alt_ctc WITH (nolock)
                   ON ( nm.id_num = alt_ctc.id_num )
-                LEFT JOIN BIOGRAPH_MASTER_UDF bmu
+                LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
                   ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num

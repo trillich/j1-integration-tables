@@ -41,7 +41,7 @@ cte_pop as (
                 on sm.ID_NUM = dh.ID_NUM
 	 WHERE sm.id_num in (
                 SELECT distinct id_num
-                FROM STUDENT_CRS_HIST sch
+                FROM STUDENT_CRS_HIST sch with (nolock)
                 WHERE stud_div IN ( 'UG', 'GR' )
                 AND (
                     (sch.YR_CDE = @cyr and sch.TRM_CDE = @cterm)
@@ -82,7 +82,7 @@ cte_udefs as (
         udef_3a_5           AUGU,
         udef_5a_1           FIXME -- google doc "mc-connect field names in j1"
     FROM
-        candidate can
+        candidate can with (nolock)
     WHERE
         ID_NUM in ( select ID_NUM from cte_pop )
 )
@@ -93,7 +93,7 @@ cte_attr_detail as (
         ID_NUM,
         ATTRIB_CDE
     FROM
-        ATTRIBUTE_TRANS
+        ATTRIBUTE_TRANS with (nolock)
     WHERE
         ID_NUM in (select id_num from cte_pop)
         and ATTRIB_END_DATE is null
@@ -132,7 +132,7 @@ cte_sport_detail
                 partition by ID_NUM
                 order by SPORTS_CDE,YR_CDE,TRM_CDE desc
             ) x
-        FROM SPORTS_TRACKING st
+        FROM SPORTS_TRACKING st with (nolock)
         WHERE
             st.ID_NUM in (select id_num from cte_pop)
             and
@@ -150,7 +150,7 @@ cte_sport as (
         max(case when x=1 then sports_cde else null end) sport1,
         max(case when x=2 then sports_cde else null end) sport2
     FROM
-        cte_sport_detail
+        cte_sport_detail with (nolock)
     GROUP BY
         ID_NUM
 )
@@ -158,7 +158,7 @@ cte_sport as (
 ,
 cte_emerg_seq as (
     SELECT ID_NUM,min(EMER_CON_SEQ) seq
-    FROM EMERG_CONTACT_MAST
+    FROM EMERG_CONTACT_MAST with (nolock)
     WHERE
         ID_NUM in ( SELECT id_num FROM cte_pop )
     GROUP BY ID_NUM
@@ -170,7 +170,7 @@ cte_emerg as (
         concat(ecm.FIRST_NAME,LAST_NAME)    emerg_name,
         ecm.MOBILE_PHONE_NUM                emerg_num
     FROM
-        EMERG_CONTACT_MAST ecm
+        EMERG_CONTACT_MAST ecm with (nolock)
         JOIN
         cte_emerg_seq e
             on e.ID_NUM = ecm.ID_NUM and e.seq = ecm.EMER_CON_SEQ
@@ -185,7 +185,7 @@ cte_back2mack as (
         MAX(IAMHERE)        iamhere,
         MAX(REASON)         reason
     FROM
-        MCM_BACK_TO_MACK
+        MCM_BACK_TO_MACK with (nolock)
     WHERE
         ID_NUM in (SELECT id_num FROM cte_pop)
         AND
@@ -201,7 +201,7 @@ cte_veh as (
         id_num_vp_holder id_num,
         vp_num
     FROM
-        cm_sa_vehcl_reg veh
+        cm_sa_vehcl_reg veh with (nolock)
     WHERE
         id_num_veh_ownr in ( SELECT id_num FROM cte_pop )
 )
@@ -235,7 +235,7 @@ SELECT
 FROM
     cte_pop pop
     JOIN
-    namemaster nm
+    namemaster nm with (nolock)
         on pop.ID_NUM = nm.ID_NUM
     LEFT JOIN
     cte_attr attr

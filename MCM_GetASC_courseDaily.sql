@@ -159,7 +159,7 @@ cte_crs as (
                 ,' ','')            cw_unique_courseid,
         'FIXME'                     cw_crs_area
     FROM
-        STUDENT_CRS_HIST crs
+        STUDENT_CRS_HIST crs with (nolock)
         JOIN
         cte_pop pop
             ON crs.ID_NUM = pop.ID_NUM and crs.STUD_DIV = pop.DIV_CDE
