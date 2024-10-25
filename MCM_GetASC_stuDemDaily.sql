@@ -3,7 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetASC_stuDemDaily]
-    @exec as bit = 1
+   @lastpull as datetime
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -21,10 +21,6 @@ BEGIN
     declare @nxtyr as INT        = @curyr + 1;
     declare @prvyr as INT        = @curyr - 1;
 
-    declare @nterm as VARCHAR(6) = '2024SP'; -- for debugging
-    SET @nterm = dbo.MCM_FN_CALC_TRM('N');
-    SET @nterm = right(@nterm,2);
-
 -- new students:
 -- *EML with @merrimack.edu
 -- stage=DEPT NMDEP
@@ -32,93 +28,92 @@ BEGIN
 WITH
 cteStuCur as (
 --get current registered students
-select DISTINCT sch.ID_NUM, dh.DIV_CDE
-from STUDENT_CRS_HIST sch with (nolock)
-	inner join DEGREE_HISTORY dh with (nolock)
-    on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
+select sch.ID_NUM, dh.DIV_CDE, MAX(sch.JOB_TIME) sch_job_time, MAX(dh.JOB_TIME) dh_job_time--, 1 as cte
+from STUDENT_CRS_HIST sch
+	inner join DEGREE_HISTORY dh WITH (NOLOCK) on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE and dh.CUR_DEGREE = 'Y'
 where (sch.YR_CDE = @curyr)
 	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
+group by sch.ID_NUM, dh.DIV_CDE
 ),
 cteStuPrev as (
 --get previous term registered students who don't exist in the current student pop
-select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE --max puts UG first since they can be registered for UG and GR classes at the same time.
-from STUDENT_CRS_HIST sch with (nolock)
-	inner join DEGREE_HISTORY dh with (nolock)
-    on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
-	left join cteStuCur on sch.ID_NUM = cteStuCur.ID_NUM
+select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE, --max puts UG first since they can be registered for UG and GR classes at the same time.
+	MAX(sch.JOB_TIME) sch_job_time, MAX(dh.JOB_TIME) dh_job_time--, 2 as cte
+from STUDENT_CRS_HIST sch
+	inner join DEGREE_HISTORY dh on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
 where (sch.YR_CDE = @prvyr)
 	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
-	and cteStuCur.ID_NUM is null
 group by sch.ID_NUM
 ),
 cteAdm as (
---get deposited students for the upcoming term that do not exist in the current term 
---just in case they switched from UG to GR between current term and next term
-	select cand.ID_NUM, cand.DIV_CDE
-	from candidacy cand with (nolock)
-		inner join AlternateContactMethod acm with (nolock)
-        on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
-		left join cteStuCur on cteStuCur.ID_NUM = cand.ID_NUM
-	where (cand.YR_CDE = @curyr and cand.TRM_CDE = @nterm
-		and cand.CUR_CANDIDACY = 'Y'
-		and cand.stage in ('DEPT', 'NMDEP'))
-		and acm.AlternateContact like '%@merrimack.edu'
-		and cteStuCur.ID_NUM is null
+--get deposited students for the upcoming term that do not exist in the current or p term 
+--just in case they switched from UG to GR between current term and next term.
+--Using same criteria as GetASC_stuAdmDaily since we shouldn't be sending next term students here
+--if stuAdmDaily is not sending them. Otherwise, we will have them in stuDemDaily without the ADM data.
+	SELECT cand.ID_NUM, cand.DIV_CDE, cand.JOB_TIME--, 3 as cte
+	FROM candidacy cand with (nolock)
+        LEFT JOIN stage_history_tran h with (nolock) on (cand.ID_NUM = h.ID_NUM 
+			AND cand.YR_CDE = h.YR_CDE
+            AND cand.TRM_CDE = h.TRM_CDE
+            AND cand.PROG_CDE = h.PROG_CDE
+            AND cand.DIV_CDE = h.DIV_CDE
+            AND h.hist_stage='ACPT' )
+		INNER JOIN AlternateContactMethod acm on cand.ID_NUM = acm.ID_NUM and acm.ADDR_CDE = '*EML'
+    WHERE ((
+			--active UG terms
+			(cand.div_cde = 'UG' AND cand.TRM_CDE + cand.YR_CDE IN 
+				(SELECT term + [YEAR] 
+				 FROM MCM_div_process WITH (NOLOCK) 
+				 WHERE division = 'UG' AND process = 'MCConnectADM' AND CAST(getdate() as date) BETWEEN active_date AND inactive_date )
+				)
+			OR 
+			--active GR terms
+		   (cand.div_cde = 'GR' AND cand.TRM_CDE + cand.YR_CDE IN 
+			   (SELECT term + [YEAR] 
+				FROM MCM_div_process WITH (NOLOCK) 
+				WHERE division = 'GR' AND process = 'MCConnectADM' AND CAST(getdate() as date) BETWEEN active_date AND inactive_date )
+			   )
+		  )
+        AND cand.STAGE IN ( 'DEPT', 'NMDEP' )
+        AND cand.CUR_CANDIDACY = 'Y'
+		AND acm.AlternateContact like '%@merrimack.edu')
 ),
 cte_Pop as (
-	select *
+	select  ID_NUM, DIV_CDE, CASE WHEN sch_job_time >= dh_job_time THEN sch_job_time ELSE dh_job_time END JOB_TIME--, cte
 	from cteStuCur
-	union all 
-	select * 
-	from cteStuPrev
+
 	union all
-	select *
+
+	select ID_NUM, DIV_CDE, JOB_TIME--, cte
 	from cteAdm
+	where NOT EXISTS (select * from cteStuCur where cteStuCur.ID_NUM = cteAdm.ID_NUM)
+
+	union all 
+
+	select ID_NUM, DIV_CDE, CASE WHEN sch_job_time >= dh_job_time THEN sch_job_time ELSE dh_job_time END JOB_TIME--, cte
+	from cteStuPrev 
+	where NOT EXISTS (select * from cteStuCur where cteStuCur.ID_NUM = cteStuPrev.ID_NUM)
+		AND NOT EXISTS (select * from cteAdm where cteAdm.ID_NUM = cteStuPrev.ID_NUM)
+
+	
 )
+--select * from cte_Pop where ID_NUM = 246485
 -- select * from ctepop order by ID_NUM;
 ,
 
 -- ==--==--==--==--==--==--== --
-cte_slateids as (
-    SELECT
-        ID_NUM,
-        max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
-        max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
-    FROM
-        ALTERNATE_IDENTIFIER ai WITH (nolock)
-    WHERE
-        ai.ID_NUM in ( select ID_NUM from cte_pop )
-        and ai.IDENTIFIER_TYPE in ('SUG','SGPS')
-        and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
-        and (ai.END_DTE is null or ai.END_DTE > getdate())
-    GROUP BY ID_NUM
-)
-,
-cte_email AS (
-    SELECT
-        acm.id_num,
-        acm.alternatecontact        email,
-        LEFT(acm.alternatecontact, Charindex('@', acm.alternatecontact) - 1)
-                                    username
-         FROM   alternatecontactmethod acm WITH (nolock)
-         WHERE  acm.addr_cde = '*EML'
-            AND acm.alternatecontact LIKE '%@merrimack.edu'
-            AND acm.ID_NUM in ( select id_num from cte_pop )
-)
--- select * from cte_email;
-,
+
 cte_bio as (
     SELECT
-        slt.SUG             slate_id,
-        slt.SGPS            slate_guid_asc,
-        nm.ID_NUM           cx_id,
+        ai.IDENTIFIER       slate_guid,
+        nm.ID_NUM           mc_id,
         nm.FIRST_NAME       first_name,
         coalesce(nm.PREFERRED_NAME,nm.FIRST_NAME)
                             pref_first_name,
         nm.LAST_NAME        last_name,
         nm.MIDDLE_NAME      middle_name,
         nm.SUFFIX           suffix_name,
-        email.username      network_username,
+        LEFT(acm.alternatecontact, Charindex('@', acm.alternatecontact) - 1)      network_username,
         bm.BIRTH_DTE        birthday,
         bm.GENDER           gender,
         ethnic.IPEDS_Desc   ethnicity,
@@ -127,10 +122,8 @@ cte_bio as (
             THEN 'Y'
             ELSE 'N'
         END                 hispanic,
-        bm.CITIZEN_OF       citizen, -- FIXME
-            -- in CX this is 'U.S.Citizen'/'Dual Citizenship'/'DACA Approved'/'Refugee'... etc
-        'FIXME'             visa,
-            -- F-1, IP, B-2, OTH, PR, F-1, H-4 ...etc
+        bm.CITIZENSHIP_STS  citizen, 
+        bm.VISA_TYPE        visa,
         nm.IS_FERPA_RESTRICTED
                             ferpa,
         amp.ADDR_LINE_1     perm_addrline1,
@@ -153,15 +146,17 @@ cte_bio as (
         aml.CITY            mail_city,
         aml.[STATE]         mail_state,
         aml.ZIP5            mail_zip,
-        aml.COUNTRY         mail_ctry
-    FROM
-        NameMaster nm with (nolock)
+        aml.COUNTRY         mail_ctry,
+		att.ATTRIB_CDE		austin_scholar,
+		(SELECT MAX (v) FROM (VALUES (pop.JOB_TIME), (nm.JOB_TIME), (bm.JOB_TIME), (ethnic.JOB_TIME), (amp.ChangeTime), (amc.ChangeTime), (aml.ChangeTime), 
+			(ai.JOB_TIME), (acm.ChangeTime), (att.JOB_TIME)) AS value(v)) as JOB_TIME
+    FROM cte_Pop pop
+		inner hash join
+        NameMaster nm with (nolock) 
+			on pop.ID_NUM = nm.ID_NUM
         join
         BIOGRAPH_MASTER bm with (nolock)
             on nm.ID_NUM = bm.ID_NUM
-        left join
-        cte_email email
-            on nm.ID_NUM = email.ID_NUM
         LEFT JOIN mcm_latest_ethnicrace_detail ethnic WITH (nolock)
             ON ( nm.id_num = ethnic.id_num )
 
@@ -183,11 +178,10 @@ cte_bio as (
         LEFT JOIN addressmaster aml WITH (nolock)
             ON naml.addressmasterappid = aml.appid
 
-        LEFT JOIN cte_slateids slt
-            on nm.ID_NUM = slt.ID_NUM
+		LEFT JOIN ATTRIBUTE_TRANS att WITH (NOLOCK) ON nm.ID_NUM = att.ID_NUM AND att.ATTRIB_CDE = 'AUST'
+		LEFT JOIN ALTERNATE_IDENTIFIER ai WITH (nolock) on nm.ID_NUM = ai.ID_NUM and ai.IDENTIFIER_TYPE in ('SCON')
+		LEFT JOIN alternatecontactmethod acm WITH (nolock) on nm.ID_NUM = acm.ID_NUM and acm.addr_cde = '*EML' AND acm.alternatecontact LIKE '%@merrimack.edu'
 
-    WHERE
-        nm.ID_NUM in ( select id_num from cte_pop )
 )
 -- select * from cte_bio;
 ,
@@ -199,19 +193,23 @@ cte_roomies_detail as (
         sr.BLDG_CDE,
         sr.ROOM_CDE,
         -- sr.ROOMMATE_ID,
-        STRING_AGG(concat(nm.FIRST_NAME,' ',nm.LAST_NAME),',') roommates
+        STRING_AGG(concat(nm.FIRST_NAME,' ',nm.LAST_NAME),',') roommates, 
+		ssa.RESIDENCE_HALL_CHECKOUT_DTE,
+		ssa.RESID_COMMUTER_STS,
+		max(sr.JOB_TIME) sr_job_time
     FROM
-        STUD_ROOMMATES sr with (nolock)
+        STUD_ROOMMATES sr WITH (NOLOCK)
         join
-        NameMaster nm with (nolock)
+        NameMaster nm WITH (NOLOCK)
         on sr.ROOMMATE_ID = nm.ID_NUM
+		join
+		STUD_SESS_ASSIGN ssa WITH (NOLOCK) on sr.ID_NUM = ssa.ID_NUM and sr.SESS_CDE = ssa.SESS_CDE
     WHERE
         sr.ID_NUM in ( select id_num from cte_pop )
         and
-        sr.SESS_CDE like concat('%',cast(@curyr as char(4))) -- FA or SP of the current (acad) year
-        -- FIXME this probably isn't workable for when SP is waaaaay off and not populated
+        sr.SESS_CDE IN (SELECT term + [YEAR] FROM MCM_div_process WHERE process = 'MCConnectHOU' AND division = 'UG' AND CAST(getdate() as date) BETWEEN active_date AND inactive_date)
     GROUP BY
-        sr.ID_NUM,sr.SESS_CDE,sr.BLDG_CDE,sr.ROOM_CDE
+        sr.ID_NUM,sr.SESS_CDE,sr.BLDG_CDE,sr.ROOM_CDE, ssa.RESIDENCE_HALL_CHECKOUT_DTE, ssa.RESID_COMMUTER_STS
 )
 -- select id_num,STRING_AGG(roommate_name,',') from cte_roomies_detail group by ID_NUM;
 ,
@@ -220,14 +218,15 @@ cte_roomies as (
         id_num,
         max(case when term='FA' then SESS_CDE else null end) fa_housing_semyr,
         max(case when term='SP' then SESS_CDE else null end) sp_housing_semyr,
-        max(case when term='FA' then 'R' else 'C' end) fa_housing_intend, -- FIXME
-        max(case when term='SP' then 'R' else 'C' end) sp_housing_intend, -- FIXME
+        max(case when term='FA' then RESID_COMMUTER_STS else 'C' end) fa_housing_intend, 
+        max(case when term='SP' then RESID_COMMUTER_STS else 'C' end) sp_housing_intend, 
         max(case when term='FA' then concat(BLDG_CDE,' ',ROOM_CDE) else null end) fa_housing_bldg_room,
         max(case when term='SP' then concat(BLDG_CDE,' ',ROOM_CDE) else null end) sp_housing_bldg_room,
-        max(case when term='FA' then 'FIXME' else null end) fa_housing_withdraw_date,
-        max(case when term='SP' then 'FIXME' else null end) sp_housing_withdraw_date,
+        max(case when term='FA' then RESIDENCE_HALL_CHECKOUT_DTE else null end) fa_housing_withdraw_date,
+        max(case when term='SP' then RESIDENCE_HALL_CHECKOUT_DTE else null end) sp_housing_withdraw_date,
         max(case when term='FA' then roommates else null end) fa_housing_suitemates,
-        max(case when term='SP' then roommates else null end) sp_housing_suitemates
+        max(case when term='SP' then roommates else null end) sp_housing_suitemates, 
+		max(sr_job_time) as sr_job_time
     FROM
         cte_roomies_detail
     group by
@@ -238,9 +237,10 @@ cte_roomies as (
 cte_hold_detail as (
     SELECT
         ID_NUM,
-        HOLD_CDE
+        HOLD_CDE, 
+		JOB_TIME
     FROM
-        HOLD_TRAN with (nolock)
+        HOLD_TRAN
     WHERE
         ID_NUM in (select id_num from cte_pop) and
         END_DTE is null AND
@@ -253,7 +253,8 @@ cte_hold as (
         ID_NUM,
         max(case when HOLD_CDE in ('HR'          ) then HOLD_CDE else null end) health_hold,
         max(case when HOLD_CDE in ('CL','CO','CG') then HOLD_CDE else null end) bursar_hold,
-        max(case when HOLD_CDE in ('PC','RE'     ) then HOLD_CDE else null end) registrarion_hold
+        max(case when HOLD_CDE in ('PC','RE'     ) then HOLD_CDE else null end) registrarion_hold,
+		max(JOB_TIME) as JOB_TIME
     FROM
         cte_hold_detail
     GROUP BY
@@ -265,18 +266,53 @@ cte_back2mack as (
     SELECT
         ID_NUM,
         IAMHERE,
-        SUBMIT_DATE as IAMHERE_DATE -- FIXME? not sure which date field to use
+        SUBMIT_DATE as IAMHERE_DATE 
     FROM
-        MCM_BACK_TO_MACK with (nolock)
+        MCM_BACK_TO_MACK
     WHERE
         ID_NUM in ( select ID_NUM from cte_pop ) AND
         TRM_CDE = right(@cterm,2) AND
         YR = @curyr
-)
+),
 -- select * from cte_back2mack;
-
+cteAll as (
 select
-    bio.*,
+    slate_guid,
+    bio.mc_id,
+    bio.first_name,
+    bio.pref_first_name,
+    bio.last_name,
+    bio.middle_name,
+    bio.suffix_name,
+    bio.network_username,
+    bio.birthday,
+    bio.gender,
+    bio.ethnicity,
+    bio. hispanic,
+    bio.citizen, 
+    bio.visa,
+    bio.ferpa,
+    bio.perm_addrline1,
+    bio.perm_addrline2,
+    bio.perm_addrline3,
+    bio.perm_city,
+    bio.perm_state,
+    bio.perm_zip,
+    bio.perm_ctry,
+    bio.curr_addrline1,
+    bio.curr_addrline2,
+    bio.curr_addrline3,
+    bio.curr_city,
+    bio. curr_state,
+    bio.curr_zip,
+    bio.curr_ctry,
+    bio.mail_addrline1,
+    bio.mail_addrline2,
+    bio.mail_addrline3,
+    bio.mail_city,
+    bio.mail_state,
+    bio.mail_zip,
+    bio.mail_ctry,
     rm.fa_housing_semyr,
     rm.fa_housing_intend,
     rm.fa_housing_bldg_room,
@@ -287,26 +323,30 @@ select
     rm.sp_housing_bldg_room,
     rm.sp_housing_withdraw_date,
     rm.sp_housing_suitemates,
-    'FIXME'             austin_scholar,
+    bio.austin_scholar,
     hold.health_hold,
     hold.bursar_hold,
     hold.registrarion_hold,
     b2m.iamhere,
-    b2m.IAMHERE_DATE
+    b2m.IAMHERE_DATE, 
+	(SELECT MAX (v) FROM (VALUES (bio.JOB_TIME), (rm.sr_job_time), (hold.JOB_TIME), (b2m.IAMHERE_DATE)) AS value(v)) as JOB_TIME
 from
     cte_bio bio
-    JOIN
+    LEFT JOIN
     cte_roomies rm
-    on bio.cx_id = rm.ID_NUM
+    on bio.mc_id = rm.ID_NUM
     LEFT JOIN
     cte_hold hold
-    on bio.cx_id = hold.ID_NUM
+    on bio.mc_id = hold.ID_NUM
     LEFT JOIN
     cte_back2mack b2m
-    on bio.cx_id = b2m.ID_NUM
-ORDER BY
-    bio.cx_id
--- where mail_addrline1 > '!'
+    on bio.mc_id = b2m.ID_NUM
+)
+SELECT * 
+FROM cteAll
+WHERE JOB_TIME >= @lastpull
+ORDER BY mc_id
+
 ;
 
     set nocount off;

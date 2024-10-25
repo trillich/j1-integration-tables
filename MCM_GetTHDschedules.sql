@@ -3,7 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetTHDschedules]
-
+@exec as bit = 1
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -54,7 +54,7 @@ as (
             SECTION_SCHEDULES ss with (nolock)
         where
             ss.YR_CDE = @curyr and
-            ss.TRM_CDE = left(@cterm,2)
+            ss.TRM_CDE = left(@cterm,2) -- FIXME
     ) x
 ),
 cte_course_types

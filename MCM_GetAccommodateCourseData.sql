@@ -20,7 +20,7 @@ BEGIN
 -- defaults for testing:
 declare @curyr int; -- = 2024;
 declare @cterm varchar(6); -- = 'FA';
--- declare @daysago int = 111;
+-- declare @daysago int = 68;
 select @cterm = dbo.MCM_FN_CALC_TRM('C'); -- YYYYSS for example: 2024FA
 -- print @cterm;
 set @curyr = cast(left(@cterm,4) as int);

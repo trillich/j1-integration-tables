@@ -114,22 +114,22 @@ cte_adv as (
         ON pop.ID_NUM = ast1.ID_NUM AND pop.DIV_CDE = ast1.DIV_CDE AND ast1.ADVISOR_NUM = 1
     LEFT JOIN NameMaster advnm1 WITH (nolock)
         ON ast1.ADVISOR_ID = advnm1.ID_NUM
-    LEFT JOIN alternatecontactmethod acm1 WITH (nolock)
-        ON advnm1.APPID = acm1.NameMasterAppID AND acm1.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm1
+        WITH (nolock) ON advnm1.APPID = acm1.NameMasterAppID AND acm1.ADDR_CDE = '*EML'
     -- secondary advisor:
     LEFT JOIN ADVISOR_STUD_TABLE ast2 WITH (nolock)
         ON pop.ID_NUM = ast2.ID_NUM AND pop.DIV_CDE = ast2.DIV_CDE AND ast2.ADVISOR_NUM = 2
     LEFT JOIN NameMaster advnm2 WITH (nolock)
         ON ast2.ADVISOR_ID = advnm2.ID_NUM
-    LEFT JOIN alternatecontactmethod acm2 WITH (nolock)
-        ON advnm2.APPID = acm2.NameMasterAppID AND acm2.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm2
+        WITH (nolock) ON advnm2.APPID = acm2.NameMasterAppID AND acm2.ADDR_CDE = '*EML'
     -- career advisor:
     LEFT JOIN ADVISOR_STUD_TABLE ast3 WITH (nolock)
         ON pop.ID_NUM = ast3.ID_NUM AND pop.DIV_CDE = ast3.DIV_CDE AND ast3.ADVISOR_NUM = 3
     LEFT JOIN NameMaster advnm3 WITH (nolock)
         ON ast3.ADVISOR_ID = advnm3.ID_NUM
-    LEFT JOIN alternatecontactmethod acm3 WITH (nolock)
-        ON advnm3.APPID = acm3.NameMasterAppID AND acm3.ADDR_CDE = '*EML'
+    LEFT JOIN alternatecontactmethod acm3
+        WITH (nolock) ON advnm3.APPID = acm3.NameMasterAppID AND acm3.ADDR_CDE = '*EML'
 )
 -- select * from cte_adv;
 ,
@@ -145,7 +145,7 @@ cte_acad as (
         sdm.ENTRY_DTE                       enr_date,
         case when dh.DIV_CDE not in ('NM','GNM') then sdm.ENTRY_DTE else null end
                                             matric_date,
-        'FIXME'                             acst_desc, -- academic status in CX
+        'FIXME'                             acst_desc,
         'FIXME'                             acst_code,
         dh.MAJOR_1                          major1_code,
         maj1.MAJOR_MINOR_DESC               major1_desc,
@@ -234,8 +234,7 @@ cte_acad as (
 -- select * from cte_acad where conc2_code>'!';
 
 SELECT
-    slate.SUG                       slate_id,
-    slate.SGPS                      slate_guid_asc,
+    slate.SUG                       slate_guid, -- FIXME probably not correct
     pop.ID_NUM                      cx_id,
     prog_code,
     prog_desc,

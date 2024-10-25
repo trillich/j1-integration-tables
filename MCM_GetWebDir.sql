@@ -19,19 +19,17 @@ BEGIN
     WITH
     cte_empl as (
         SELECT
-            u.ID_NUM            id_number,
-            'FIXME' ext,
+            u.ID_NUM            id_num,
+            '' ext,
             n.LAST_NAME,
             n.FIRST_NAME,
             u.EMP_TITLE         personnel_title,
-            -- u.EMP_HOME_DEPT,
-            'FIXME'             department_long_text,
-            -- u.EMP_BUILD,
+            '' department_long_text,
             b.BUILDING_DESC     building_text,
             u.EMP_OFFICE        office,
-            'FIXME'             mail,
+            u.mail_stop             mail,
             acm.alternatecontact alternate_address_line_1,
-            'FIXME'             personal_designation
+            u.emp_involvement             personal_designation
         FROM
             NAME_MASTER_UDF u with (nolock)
             join
@@ -50,9 +48,9 @@ BEGIN
         --     and
         --     (EMP_TERM_DTE > getdate() or EMP_TERM_DTE is null)
     )
-    select *
+    select  *
     from cte_empl
-    order by LAST_NAME,FIRST_NAME,ID_NUMBER;
+    order by LAST_NAME,FIRST_NAME,id_num;
 
     set nocount off;
     REVERT

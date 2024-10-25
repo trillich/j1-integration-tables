@@ -74,7 +74,7 @@ cte_sport
         SELECT DISTINCT st.id_num
         FROM SPORTS_TRACKING st with (nolock)
             join
-            cte_stu_population stu with (nolock)
+            cte_stu_population stu
             on st.ID_NUM = stu.ID_NUM
         WHERE
             (st.YR_CDE = @curyr and st.TRM_CDE = @cterm)
@@ -165,7 +165,7 @@ cte_emails
             eml.id_num
     )
 
-SELECT
+SELECT 
     bio.id_num          ID,
     bio.FIRST_NAME      FIRSTNAME,
     bio.LAST_NAME       LASTNAME,

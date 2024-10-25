@@ -258,7 +258,7 @@ cte_curstu
                 inner JOIN student_master sm WITH (nolock)
                        ON ( sm.id_num = nm.id_num )
                 LEFT JOIN BIOGRAPH_MASTER_UDF bmu with (nolock)
-                       ON (bm.ID_NUM = bmu.ID_NUM)
+                  ON (bm.ID_NUM = bmu.ID_NUM)
                 LEFT JOIN stud_sess_assign ssa WITH (nolock)
                        ON nm.id_num = ssa.id_num
                           AND ssa.sess_cde = @cterm
@@ -570,7 +570,7 @@ cte_both as
     -- select count(*) rex from cte_newstu;
 
 -- end of CTE specifications
-select
+select 
     stu_id                  student_id,
     first_name,
     middle_name,
@@ -585,8 +585,10 @@ select
         then 0
         else -1
         end                 privacy_indicator,
-    concat(NETWORK_USER_NAME,'@merrimack.edu')
-                            additional_id1,
+    CASE 
+		WHEN ISNULL(NETWORK_USER_NAME, '') <> '' THEN concat(NETWORK_USER_NAME,'@merrimack.edu')
+		ELSE ''
+	END                     additional_id1,
     ''                      additional_id2,
     current_class_cde       class_status,
     cohort_cde              student_status,
@@ -598,8 +600,10 @@ select
     Mobile_Phone            MOBILE_PHONE,
     ''                      MOBILE_PHONE_CARRIER,
     ''                      OPT_OUT_OF_TEXT,
-    concat(NETWORK_USER_NAME,'@merrimack.edu')
-                            CAMPUS_EMAIL,
+     CASE 
+		WHEN ISNULL(NETWORK_USER_NAME, '') <> '' THEN concat(NETWORK_USER_NAME,'@merrimack.edu')
+		ELSE ''
+	END                         CAMPUS_EMAIL,
     cte_peml_ctc.email          PERSONAL_EMAIL,
     ''                      PHOTO_FILE_NAME,
     ''                      PERM_PO_BOX,

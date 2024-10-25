@@ -15,19 +15,19 @@ AS
 -- =============================================
 BEGIN
 
-       declare @cterm as varchar(6)
-       declare @prevyr as int
-       declare @curyr as int
-       declare @nxtyr as int
-       set nocount on;
+    declare @cterm as varchar(6)
+    declare @prevyr as int
+    declare @curyr as int
+    declare @nxtyr as int
+    set nocount on;
 
-       select @cterm = dbo.MCM_FN_CALC_TRM('C');
-       set @curyr = cast(left(@cterm,4) as int);
-       set @prevyr = @curyr - 1;
-       set @nxtyr = @curyr + 1;
+    select @cterm = dbo.MCM_FN_CALC_TRM('C');
+    set @curyr = cast(left(@cterm,4) as int);
+    set @prevyr = @curyr - 1;
+    set @nxtyr = @curyr + 1;
 
-       SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
-       -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
+    SET @cterm = right(@cterm,2) + left(@cterm,4); -- SSYYYY (not YYYYSS)
+    -- print 'cterm='+@cterm+', yrs=['+@prevyr+','+@curyr+','+@nxtyr+']';
 
 WITH cte_loa
      AS (SELECT DISTINCT x.id_num,
@@ -35,11 +35,11 @@ WITH cte_loa
                          x.absence_cde,
                          d.absence_desc
        FROM   leaveofabsence x with (nolock)
-       LEFT JOIN absence_def d WITH (nolock)
-              ON ( x.absence_cde = d.absence_cde )
-       WHERE  ( x.leave_begin_dte <= Getdate()
-              AND ( x.leave_end_dte IS NULL
-                     OR x.leave_end_dte > Getdate() ) )),
+                LEFT JOIN absence_def d WITH (nolock)
+                       ON ( x.absence_cde = d.absence_cde )
+         WHERE  ( x.leave_begin_dte <= Getdate()
+                  AND ( x.leave_end_dte IS NULL
+                         OR x.leave_end_dte > Getdate() ) )),
  cte_reg_stu
      AS (SELECT DISTINCT id_num
          FROM   student_crs_hist with (nolock)
@@ -66,7 +66,7 @@ WITH cte_loa
                 CONVERT(VARCHAR(10), c.hist_stage_dte, 101) enrollment_date
        FROM   candidacy c with (nolock)
        LEFT JOIN cte_reg_stu r with (nolock)
-              ON ( c.id_num = r.id_num )
+                       ON ( c.id_num = r.id_num )
          WHERE  c.div_cde IN ( 'UG', 'GR' )
                 AND c.yr_cde IN ( @prevyr, @curyr, @nxtyr )
                 AND c.stage IN ( 'DEPT', 'NMDEP' )
@@ -300,8 +300,8 @@ WITH cte_loa
                        ON ( dh.concentration_1 = conc1.conc_cde )
                 LEFT JOIN concentration_def conc2 WITH (nolock)
                        ON ( dh.concentration_2 = conc2.conc_cde )
-                LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
-                       ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
+				LEFT JOIN ACAD_STANDING_DEF asd WITH (NOLOCK) 
+					   ON (sm.CUR_ACAD_PROBATION = asd.ACAD_STAND_CODE)),
  cte_newstu
      AS (SELECT 
 				--'NEW'                                   grp, --for debugging

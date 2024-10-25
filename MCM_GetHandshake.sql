@@ -25,32 +25,36 @@ BEGIN
     SET @nterm = dbo.MCM_FN_CALC_TRM('N');
     SET @nterm = right(@nterm,2);
 
-WITH
+-- new students:
+-- *EML with @merrimack.edu
+-- stage=DEPT NMDEP
+
+with
 cteStuCur as (
-    --get current registered students
-    select DISTINCT sch.ID_NUM, dh.DIV_CDE
+--get current registered students
+select DISTINCT sch.ID_NUM, dh.DIV_CDE
     from STUDENT_CRS_HIST sch with (nolock)
     inner join DEGREE_HISTORY dh with (nolock)
         on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
-    where (sch.YR_CDE = @curyr)
-        and sch.TRANSACTION_STS IN ('C', 'H', 'D')
+where (sch.YR_CDE = @curyr)
+	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
 ),
 cteStuPrev as (
-    --get previous term registered students who don't exist in the current student pop
-    select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE --max puts UG first since they can be registered for UG and GR classes at the same time.
+--get previous term registered students who don't exist in the current student pop
+select DISTINCT sch.ID_NUM, max(dh.DIV_CDE) DIV_CDE --max puts UG first since they can be registered for UG and GR classes at the same time.
     from STUDENT_CRS_HIST sch with (nolock)
     inner join DEGREE_HISTORY dh with (nolock)
         on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
     left join cteStuCur with (nolock)
         on sch.ID_NUM = cteStuCur.ID_NUM
-    where (sch.YR_CDE = @prvyr)
-        and sch.TRANSACTION_STS IN ('C', 'H', 'D')
-        and cteStuCur.ID_NUM is null
-    group by sch.ID_NUM
+where (sch.YR_CDE = @prvyr)
+	and sch.TRANSACTION_STS IN ('C', 'H', 'D')
+	and cteStuCur.ID_NUM is null
+group by sch.ID_NUM
 ),
 cteAdm as (
-    --get deposited students for the upcoming term that do not exist in the current term 
-    --just in case they switched from UG to GR between current term and next term
+--get deposited students for the upcoming term that do not exist in the current term 
+--just in case they switched from UG to GR between current term and next term
 	select cand.ID_NUM, cand.DIV_CDE
 	from candidacy cand with (nolock)
     inner join AlternateContactMethod acm with (nolock)
@@ -86,8 +90,8 @@ cte_email AS (
                                     username
     FROM alternatecontactmethod acm WITH (nolock)
     WHERE acm.addr_cde = '*EML'
-      AND acm.alternatecontact LIKE '%@merrimack.edu'
-      AND acm.ID_NUM in ( select id_num from cte_pop )
+            AND acm.alternatecontact LIKE '%@merrimack.edu'
+            AND acm.ID_NUM in ( select id_num from cte_pop )
 )
 -- select * from cte_email;
 ,

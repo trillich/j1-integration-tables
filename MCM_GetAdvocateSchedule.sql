@@ -16,7 +16,7 @@ AS
 BEGIN
         set nocount on;
 
-        -- declare @daysago int = 111;
+        -- declare @daysago int = 80;
 
         declare @cterm as varchar(6) = dbo.MCM_FN_CALC_TRM('CF') -- "current fall"
         declare @curyr as int
@@ -90,7 +90,7 @@ cte_sched
             (ss.YR_CDE = @nxtyr and ss.TRM_CDE = @nterm)
     )
 
-SELECT
+SELECT 
     stu.id_num                              ID,
     schd.CRS_TITLE                          COURSE_TITLE,
     schd.CRS_CDE                            COURSE,

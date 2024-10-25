@@ -64,10 +64,10 @@ cte_slateids as (
         max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
         max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
     FROM
-        ALTERNATE_IDENTIFIER ai with (nolock)
+        ALTERNATE_IDENTIFIER ai
     WHERE
         ai.ID_NUM in ( select ID_NUM from cte_pop )
-        and ai.IDENTIFIER_TYPE in ('SUG','SGPS') -- FIXME no SGPS data in J1CONV, need to confirm with real data
+        and ai.IDENTIFIER_TYPE in ('SUG','SGP') -- FIXME no SGPS data in J1CONV, need to confirm with real data
         and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
         and (ai.END_DTE is null or ai.END_DTE > getdate())
     GROUP BY ID_NUM
@@ -172,4 +172,3 @@ END
 
 ;
 GO
-
