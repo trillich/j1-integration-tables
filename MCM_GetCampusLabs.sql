@@ -35,15 +35,64 @@ BEGIN
 -- select count(*) from namemaster;
 -- select count(*) from [JZMCM-SQL].[J1TEST].[dbo].namemaster;
 
-WITH
+WITH cte_pop as (
+	--Just retrieve the unique population of ID's that match the previous, current and next academic years
+	SELECT DISTINCT
+            sm.id_num
+	 FROM
+            STUDENT_MASTER sm WITH (nolock)
+            JOIN
+            DEGREE_HISTORY dh WITH (nolock)
+                on sm.ID_NUM = dh.ID_NUM
+	 WHERE sm.id_num in (
+                SELECT distinct id_num
+                FROM STUDENT_CRS_HIST sch
+                WHERE stud_div IN ( 'UG', 'GR' )
+                AND sch.YR_CDE in (@prvyr,@curyr,@nxtyr)
+                AND sch.transaction_sts IN ( 'H', 'C', 'D' )
+        )
+            AND sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
+            AND dh.MAJOR_1 <> 'GEN' -- omit nonmatric
+            AND dh.cur_degree = 'Y'
+),
+cte_term as (
+	--Retrieve students with with registrations sequenced by trm_begin_dte. Ordinal 1 is most recent term and ordinal 2 is the previous term
+	SELECT sch.ID_NUM, sch.YR_CDE, sch.TRM_CDE, sch.STUD_DIV,
+		DENSE_RANK() OVER (PARTITION BY sch.id_num, sch.stud_div ORDER BY ytt.TRM_BEGIN_DTE DESC) as TermOrder
+	FROM STUDENT_CRS_HIST sch WITH (nolock)
+		INNER JOIN cte_pop on sch.ID_NUM = cte_pop.ID_NUM
+		INNER JOIN YEAR_TERM_TABLE ytt WITH (NOLOCK) on sch.YR_CDE = ytt.YR_CDE AND sch.TRM_CDE = ytt.TRM_CDE
+	WHERE sch.transaction_sts IN ( 'H', 'C', 'D' )
+), 
+cte_termrank as (
+	--Compile only the Current and Previous term rows for each student
+	SELECT DISTINCT ID_NUM, YR_CDE, TRM_CDE, STUD_DIV, TermOrder
+	FROM cte_term
+	WHERE TermOrder = 1
+
+	UNION ALL
+
+	SELECT DISTINCT ID_NUM, YR_CDE, TRM_CDE, STUD_DIV, TermOrder
+	FROM cte_term
+	WHERE TermOrder = 2
+	
+)
+, 
 cte_reg_stu
      AS (
         SELECT DISTINCT
             sm.id_num,
-            sm.current_class_cde    ClassStanding,
+            sdm.CLASS_CDE		    ClassStanding,
             dh.MAJOR_1              Major,
             dh.MINOR_1              Minor,
             dh.DEGR_CDE             DegreeSought,
+			--JWW This replaces cte_gpa_detail
+			stsd.TRM_CDE + stsd.YR_CDE as CurTermEnrolled, 
+			format(stsd.TRM_GPA,'0.000') as CurTermGPA, 
+			stsd2.TRM_CDE + stsd2.YR_CDE as PrvTermEnrolled, 
+			format(stsd2.TRM_GPA,'0.000') as PrvTermGPA, 
+			stsd.CAREER_HRS_EARNED, 
+			--JWW
             td.TABLE_DESC           PrimarySchoolOfEnrollment,
             cd.COHORT_DESC,
             case
@@ -58,39 +107,31 @@ cte_reg_stu
             when 'Y'
             then 'True'
             else 'False'
-            END                     Transfer
-        FROM
-            STUDENT_MASTER sm WITH (nolock)
-            JOIN
-            DEGREE_HISTORY dh WITH (nolock)
-                on sm.ID_NUM = dh.ID_NUM
-            JOIN
-            STUDENT_DIV_MAST sdm WITH (nolock)
-                on sm.id_num = sdm.id_num
-            LEFT JOIN
-            DIVISION_DEF dd WITH (nolock)
-                on sdm.DIV_CDE = dd.DIV_CDE
-            LEFT JOIN
-            COHORT_DEFINITION cd WITH (nolock)
-                on sdm.COHORT_DEFINITION_APPID = cd.APPID
-            LEFT JOIN
-            MAJOR_MINOR_DEF maj1 WITH (nolock)
-                    ON ( dh.major_1 = maj1.major_cde )
-            LEFT JOIN
-            INSTIT_DIVISN_DEF idd WITH (nolock)
-                ON maj1.institut_div_cde = idd.institut_div_cde
-            LEFT JOIN
-            TABLE_DETAIL td WITH (nolock)
-                ON idd.school_cde = td.table_value
-                    AND td.COLUMN_NAME = 'SCHOOL_CDE'
-        WHERE sm.id_num in (
-                SELECT distinct id_num
-                FROM STUDENT_CRS_HIST sch
-                WHERE stud_div IN ( 'UG', 'GR' )
-                AND sch.YR_CDE in (@prvyr,@curyr,@nxtyr)
-                AND sch.transaction_sts IN ( 'H', 'C', 'D' )
-        )
-            AND sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
+            END                     [Transfer], 
+			advnm.FIRST_NAME + ' ' + advnm.LAST_NAME + ', ' + acm.alternatecontact	as MajorAdvisor, 
+			advnm2.FIRST_NAME + ' ' + advnm2.LAST_NAME + ', ' + acm2.alternatecontact	as OtherAdvisor
+        FROM cte_pop
+			INNER JOIN STUDENT_MASTER sm WITH (nolock) on cte_pop.ID_NUM = sm.ID_NUM
+            INNER JOIN DEGREE_HISTORY dh WITH (nolock) on sm.ID_NUM = dh.ID_NUM
+            INNER JOIN STUDENT_DIV_MAST sdm WITH (nolock) on dh.id_num = sdm.id_num AND dh.DIV_CDE = sdm.DIV_CDE
+            LEFT JOIN DIVISION_DEF dd WITH (nolock) on sdm.DIV_CDE = dd.DIV_CDE
+            LEFT JOIN COHORT_DEFINITION cd WITH (nolock) on sdm.COHORT_DEFINITION_APPID = cd.APPID
+            LEFT JOIN MAJOR_MINOR_DEF maj1 WITH (nolock) ON ( dh.major_1 = maj1.major_cde )
+            LEFT JOIN INSTIT_DIVISN_DEF idd WITH (nolock) ON maj1.institut_div_cde = idd.institut_div_cde
+            LEFT JOIN TABLE_DETAIL td WITH (nolock) ON idd.school_cde = td.table_value AND td.COLUMN_NAME = 'SCHOOL_CDE'
+                    -- table_desc is 'School of Business' or Arts&Sciences etc, need to omit DAY subprogram FIXME
+			LEFT JOIN cte_termrank curtrm ON sm.ID_NUM = curtrm.ID_NUM AND dh.DIV_CDE = curtrm.STUD_DIV AND curtrm.TermOrder = 1
+			LEFT JOIN cte_termrank prvtrm ON sm.ID_NUM = prvtrm.ID_NUM AND dh.DIV_CDE = prvtrm.STUD_DIV AND prvtrm.TermOrder = 2
+			LEFT JOIN STUD_TERM_SUM_DIV stsd WITH (nolock) ON sm.ID_NUM = stsd.ID_NUM AND curtrm.STUD_DIV = stsd.DIV_CDE AND curtrm.YR_CDE = stsd.YR_CDE AND curtrm.TRM_CDE = stsd.TRM_CDE
+			LEFT JOIN STUD_TERM_SUM_DIV stsd2 WITH (nolock) ON sm.ID_NUM = stsd2.ID_NUM AND prvtrm.STUD_DIV = stsd2.DIV_CDE AND prvtrm.YR_CDE = stsd2.YR_CDE AND prvtrm.TRM_CDE = stsd2.TRM_CDE
+			--JWW added in advisor 1 & 2
+			LEFT JOIN ADVISOR_STUD_TABLE ast WITH (nolock) ON sm.ID_NUM = ast.ID_NUM AND dh.DIV_CDE = ast.DIV_CDE AND ast.ADVISOR_NUM = 1
+			LEFT JOIN NameMaster advnm ON ast.ADVISOR_ID = advnm.ID_NUM
+			LEFT JOIN alternatecontactmethod acm WITH (nolock) ON advnm.APPID = acm.NameMasterAppID AND acm.ADDR_CDE = '*EML'
+			LEFT JOIN ADVISOR_STUD_TABLE ast2 WITH (nolock) ON sm.ID_NUM = ast2.ID_NUM AND dh.DIV_CDE = ast2.DIV_CDE AND ast2.ADVISOR_NUM = 2
+			LEFT JOIN NameMaster advnm2 ON ast2.ADVISOR_ID = advnm2.ID_NUM
+			LEFT JOIN alternatecontactmethod acm2 WITH (nolock) ON advnm2.APPID = acm2.NameMasterAppID AND acm2.ADDR_CDE = '*EML'
+        WHERE sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
             AND dh.MAJOR_1 <> 'GEN' -- omit nonmatric
             AND dh.cur_degree = 'Y'
     )
@@ -113,8 +154,8 @@ cte_names
         NameMaster nm WITH (nolock)
             LEFT JOIN
         AlternateNameMasterNames anmn WITH (nolock)
-            on nm.APPID = anmn.NameMasterAppID
-        WHERE
+            on nm.APPID = anmn.NameMasterAppID AND anmn.EndDate IS NULL
+        WHERE 
             ID_NUM in ( select id_num from cte_reg_stu )
     )
 -- select * from cte_names where suffix>'!';
@@ -214,43 +255,43 @@ cte_phones
     )
 -- select * from cte_phones -- where HomePhone<>MobilePhone
     ,
-cte_gpa_detail
-    as (
-        SELECT
-            ID_NUM,
-            TRM_CDE,
-            YR_CDE,
-            format(TRM_GPA,'0.000') gpa
-        FROM
-            STUD_TERM_SUM_DIV WITH (nolock)
-        WHERE
-            id_num in ( select id_num from cte_reg_stu )
-            and
-            (
-                (YR_CDE = @pyr and TRM_CDE = @pterm)
-                OR
-                (YR_CDE = @curyr and TRM_CDE = @cterm)
-            )
-    )
+--cte_gpa_detail
+--    as (
+--        SELECT
+--            ID_NUM,
+--            TRM_CDE,
+--            YR_CDE,
+--            format(TRM_GPA,'0.000') gpa
+--        FROM
+--            STUD_TERM_SUM_DIV WITH (nolock)
+--        WHERE
+--            id_num in ( select id_num from cte_reg_stu )
+--            and
+--            (
+--                (YR_CDE = @pyr and TRM_CDE = @pterm)
+--                OR
+--                (YR_CDE = @curyr and TRM_CDE = @cterm)
+--            )
+--    )
 -- select * from cte_gpa_detail;
-    ,
-cte_gpa
-    as (
-        SELECT
-            ID_NUM,
-            max(
-                case when TRM_CDE = @pterm then gpa else null end
-            )   PreviousTermGPA,
-            max(
-                case when TRM_CDE = @cterm then gpa else null end
-            )   CurrentTermGPA
-        FROM
-            cte_gpa_detail WITH (nolock)
-        GROUP BY
-            ID_NUM
-    )
+--    ,
+--cte_gpa
+--    as (
+--        SELECT
+--            ID_NUM,
+--            max(
+--                case when TRM_CDE = @pterm then gpa else null end
+--            )   PreviousTermGPA,
+--            max(
+--                case when TRM_CDE = @cterm then gpa else null end
+--            )   CurrentTermGPA
+--        FROM
+--            cte_gpa_detail WITH (nolock)
+--        GROUP BY
+--            ID_NUM
+--    )
 -- select * from cte_gpa order by id_num;
-    ,
+ --   ,
 cte_res
     as (
         SELECT
@@ -272,12 +313,12 @@ cte_res
                 END         LocalResidencyStatus,
             rm.ROOM_DESC
         FROM
-            STUD_SESS_ASSIGN ssa with (nolock)
+            STUD_SESS_ASSIGN ssa
             left join
-            ROOM_ASSIGN ra with (nolock)
+            ROOM_ASSIGN ra
                 on ssa.SESS_CDE = ra.SESS_CDE and ssa.ID_NUM = ra.ID_NUM
             left join
-            ROOM_MASTER rm with (nolock)
+            ROOM_MASTER rm
                 on rm.BLDG_CDE = ra.BLDG_CDE and rm.ROOM_CDE = ra.ROOM_CDE
         WHERE
             ssa.ID_NUM in ( select id_num from cte_reg_stu )
@@ -285,7 +326,7 @@ cte_res
             ssa.SESS_CDE = concat(@cterm,@curyr)
     )
 
-select
+select 
     'Overwrite'                     Action,
     email.username                  Username,
     names.InstitutionProvidedFirstName,
@@ -306,11 +347,16 @@ select
     bio.Race,
     bio.Ethnicity,
     stu.COHORT_DESC                 EnrollmentStatus,
-    ''                              CurrentTermEnolled,
-    gpa.CurrentTermGPA,
-    ''                              PreviousTermEnrolled,
-    gpa.PreviousTermGPA,
-    ''                              CreditHoursEarned,
+    --''								CurrentTermEnrolled,
+	stu.CurTermEnrolled             CurrentTermEnrolled,
+    --gpa.CurrentTermGPA,
+	stu.CurTermGPA					CurrentTermGPA, 
+    --''                              PreviousTermEnrolled,
+	stu.PrvTermEnrolled				PreviousTermEnrolled, 
+    --gpa.PreviousTermGPA,
+	stu.PrvTermGPA					PreviousTermGPA, 
+    --''                              CreditHoursEarned,
+	stu.CAREER_HRS_EARNED			CreditHoursEarned, 
     stu.AnticipatedDateOfGraduation,
     stu.CareerLevel,
     stu.ClassStanding,
@@ -318,8 +364,8 @@ select
     stu.DegreeSought,
     stu.Major,
     stu.Minor,
-    ''          MajorAdvisor,
-    ''          OtherAdvisor,
+    stu.MajorAdvisor,
+    stu.OtherAdvisor,
     res.LocalResidencyStatus,
     res.ROOM_DESC                   HousingFacility,
     International,
@@ -330,7 +376,7 @@ select
     ''                              LocalPhoneCountryCode,
     ''                              LocalPhone,
     ''                              LocalPhoneExtension,
-    ''                              LocatStreet1,
+    ''                              LocalStreet1,
     ''                              LocalStreet2,
     ''                              LocalStreet3,
     ''                              LocalCity,
@@ -364,25 +410,25 @@ from
         on stu.ID_NUM = bio.ID_NUM
     JOIN
     cte_names names
-        on bio.ID_NUM = names.ID_NUM
+        on stu.ID_NUM = names.ID_NUM
     LEFT JOIN
     cte_email email
-        on bio.ID_NUM = email.ID_NUM
+        on stu.ID_NUM = email.ID_NUM
     LEFT JOIN
     cte_peml peml
-        on bio.ID_NUM = peml.ID_NUM
-    LEFT JOIN
-    cte_gpa gpa
-        on bio.ID_NUM = gpa.ID_NUM
+        on stu.ID_NUM = peml.ID_NUM
+   -- LEFT JOIN
+    --cte_gpa gpa
+    --    on bio.ID_NUM = gpa.ID_NUM
     LEFT JOIN
     cte_phones phones
-        on bio.ID_NUM = phones.ID_NUM
+        on stu.ID_NUM = phones.ID_NUM
     LEFT JOIN
     cte_sport sport
-        on bio.ID_NUM = sport.ID_NUM
+        on stu.ID_NUM = sport.ID_NUM
     LEFT JOIN
     cte_res res
-        on bio.ID_NUM = res.ID_NUM
+        on stu.ID_NUM = res.ID_NUM
 -- where stu.id_num = 68431
 -- where LegalFirstName <> InstitutionProvidedFirstName
 -- where TRANSFER_IN = 'Y'

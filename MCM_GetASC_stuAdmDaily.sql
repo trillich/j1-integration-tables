@@ -3,7 +3,8 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetASC_stuAdmDaily]
-    @exec as bit = 1
+   @lastpull as datetime
+
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -15,25 +16,21 @@ AS
 BEGIN
      set nocount on;
 
-    declare @cterm as VARCHAR(6) = '2024FA'; -- for debugging
-    SET @cterm = dbo.MCM_FN_CALC_TRM('C');
-    declare @curyr as INT        = cast(left(@cterm,4) as int);
-
-    SET @cterm = right(@cterm,2);
-
 WITH
 cte_can as (
     SELECT
-        c.ID_NUM            cx_id,
+        c.ID_NUM            mc_id,
+		cu.Slate_AppID,
         c.TRM_CDE           plan_enr_sess,
         c.YR_CDE            plan_enr_yr,
         c.DIV_CDE           adm_prog,
         c.PROG_CDE          adm_major,
-        c.STAGE             adm_enrstat, -- FIXME just guessing here
+        c.STAGE             adm_enrstat, 
         'FULL'              adm_decsn_code, -- FIXME
         h.hist_stage_dte    adm_decsn_date,
         concat(c.TRM_CDE,' ',cast(c.YR_CDE as char(4)))
-                            adm_plansessyr
+                            adm_plansessyr, 
+		c.JOB_TIME
     FROM
         candidacy c with (nolock)
         LEFT JOIN
@@ -44,18 +41,23 @@ cte_can as (
             and c.PROG_CDE = h.PROG_CDE
             and c.DIV_CDE = h.DIV_CDE
             and h.hist_stage='ACPT' )
-    WHERE   c.div_cde IN ( 'UG', 'GR' )
-        AND c.YR_CDE = @curyr
-        AND c.TRM_CDE = @cterm
+		LEFT JOIN CANDIDACY_UDF cu WITH (NOLOCK) on c.ID_NUM = cu.ID_NUM AND c.YR_CDE = cu.YR_CDE
+			AND c.TRM_CDE = cu.TRM_CDE AND c.DIV_CDE = cu.DIV_CDE and c.PROG_CDE = cu.PROG_CDE
+    WHERE (
+			(c.div_cde = 'UG' AND c.TRM_CDE + c.YR_CDE IN 
+				(SELECT term + [YEAR] 
+				 FROM MCM_div_process WITH (NOLOCK) 
+				 WHERE division = 'UG' AND process = 'MCConnectADM' AND CAST(getdate() as date) BETWEEN active_date AND inactive_date )
+				)
+			OR 
+		   (c.div_cde = 'GR' AND c.TRM_CDE + c.YR_CDE IN 
+			   (SELECT term + [YEAR] 
+				FROM MCM_div_process WITH (NOLOCK) 
+				WHERE division = 'GR' AND process = 'MCConnectADM' AND CAST(getdate() as date) BETWEEN active_date AND inactive_date )
+			   )
+		  )
         AND c.STAGE IN ( 'DEPT', 'NMDEP' )
         AND c.CUR_CANDIDACY = 'Y'
-        /*
-        on CX we used a custom table slateasc_process_table
-        which used today's date to determine which semesters
-        were 'active'.
-        SP2025 & WI2025 for CE/UNDG/GRAD would be active starting 10/31/2024
-        SU2024 was the only session active for CE/UNDG/GRAD up til 9/1/2024
-        */
 )
 -- select * from cte_can order by cx_id;
 ,
@@ -68,11 +70,12 @@ cte_names
             nm.FIRST_NAME           pref_first_name, -- FIXME...?
             nm.LAST_NAME            last_name,
             nm.MIDDLE_NAME          middle_name,
-            nm.SUFFIX               suffix_name
+            nm.SUFFIX               suffix_name,
+			nm.JOB_TIME
         FROM
             NameMaster nm WITH (nolock)
         WHERE
-            ID_NUM in ( select cx_id from cte_can )
+            ID_NUM in ( select mc_id from cte_can )
     )
 -- select * from cte_names where suffix>'!';
     ,
@@ -81,7 +84,8 @@ cte_bio
         SELECT
             bm.ID_NUM,
             -- bm.GENDER           Sex,
-            format(bm.birth_dte, 'M/d/yyyy') birthday
+            format(bm.birth_dte, 'M/d/yyyy') birthday, 
+			bm.JOB_TIME
             -- ethnic.IPEDS_Desc   Ethnicity,
             -- CASE
             --     WHEN ethnic.ethnic_rpt_def_num = -1
@@ -101,7 +105,7 @@ cte_bio
             -- mcm_latest_ethnicrace_detail ethnic WITH (nolock)
             --     ON ( bm.id_num = ethnic.id_num )
         WHERE
-            bm.id_num in (select cx_id from cte_can)
+            bm.id_num in (select mc_id from cte_can)
     )
 -- select * from cte_bio where race='Hispanic';
     ,
@@ -110,11 +114,12 @@ cte_email
                 -- LEFT(acm.alternatecontact, 
                 --     Charindex('@', acm.alternatecontact) - 1)
                 --                         username,
-                acm.alternatecontact    email
+                acm.alternatecontact    email, 
+				acm.ChangeTime JOB_TIME
          FROM   alternatecontactmethod acm WITH (nolock)
          WHERE  acm.addr_cde = '*EML'
                 AND acm.alternatecontact LIKE '%@merrimack.edu'
-                AND id_num in ( select cx_id from cte_can )
+                AND id_num in ( select mc_id from cte_can )
     )
 -- select * from cte_email;
 ,
@@ -122,25 +127,46 @@ cte_slateids as (
     SELECT
         ai.ID_NUM,
         can.adm_prog, -- div_cde
-        max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
-        max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
+		case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end SUG,
+		case when IDENTIFIER_TYPE='SGP' then IDENTIFIER else null end SGPS,
+		case when IDENTIFIER_TYPE='SCON' then IDENTIFIER else null end SCON,
+		ISNULL(can.Slate_AppID, '') Slate_AppID, 
+		ai.JOB_TIME
     FROM
         ALTERNATE_IDENTIFIER ai WITH (nolock)
         JOIN
         cte_can can
-            on ai.ID_NUM = can.cx_id
+            on ai.ID_NUM = can.mc_id
     WHERE
-        ai.IDENTIFIER_TYPE in ('SUG','SGPS')
+        ai.IDENTIFIER_TYPE in ('SUG','SGP', 'SCON')
         and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
         and (ai.END_DTE is null or ai.END_DTE > getdate())
-    GROUP BY ai.ID_NUM, can.adm_prog
+),
+cte_chg as (
+	SELECT chgs.mc_id, MAX(chgs.JOB_TIME) JOB_TIME
+	FROM (
+		SELECT mc_id, JOB_TIME FROM cte_can WHERE JOB_TIME >= @lastpull
+		UNION ALL
+		SELECT ID_NUM mc_id, JOB_TIME FROM cte_names WHERE JOB_TIME >= @lastpull
+		UNION ALL
+		SELECT ID_NUM mc_id, JOB_TIME FROM cte_bio WHERE JOB_TIME >= @lastpull
+		UNION ALL
+		SELECT ID_NUM mc_id, JOB_TIME FROM cte_email WHERE JOB_TIME >= @lastpull
+		UNION ALL
+		SELECT ID_NUM mc_id, JOB_TIME FROM cte_slateids WHERE JOB_TIME >= @lastpull
+	) chgs
+	GROUP BY chgs.mc_id
 )
 
 SELECT
-
-    slt.SUG                         slate_id,
-    slt.SGPS                        slate_guid_asc,
-    cx_id,
+	slt.SCON slate_id,
+    case
+        when slt.adm_prog='GR' then slt.SGPS
+        when slt.adm_prog='UG' then slt.SUG
+        else ''
+    end                 slate_guid, -- person guid based on program
+    can.Slate_AppID             slate_appid, 
+    mc_id,
     first_name,
     pref_first_name,
     last_name,
@@ -158,18 +184,19 @@ FROM
     cte_can can
     JOIN
     cte_names names
-        on ( can.cx_id = names.ID_NUM )
+        on ( can.mc_id = names.ID_NUM )
     LEFT JOIN
     cte_bio bio
-        on ( can.cx_id = bio.ID_NUM )
+        on ( can.mc_id = bio.ID_NUM )
     LEFT JOIN
     cte_email email
-        on ( can.cx_id = email.ID_NUM )
+        on ( can.mc_id = email.ID_NUM )
     LEFT JOIN
     cte_slateids slt
-        on ( can.cx_id = slt.ID_NUM )
+        on ( can.mc_id = slt.ID_NUM )
+WHERE can.mc_id IN (SELECT mc_id from cte_chg)
 ORDER BY
-    cx_id
+    mc_id
     ;
 
     set nocount off;
