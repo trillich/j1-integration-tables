@@ -3,7 +3,7 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 ALTER PROCEDURE [dbo].[MCM_GetASC_stuAcadDaily]
-    @exec as bit = 1
+    @lastpull as datetime
 WITH EXECUTE AS 'dbo'
 AS
 -- =============================================
@@ -16,20 +16,9 @@ BEGIN
      set nocount on;
 
         declare @cterm as VARCHAR(6) = '2024FA'; -- for debugging
-        -- set @cterm = dbo.MCM_FN_CALC_TRM('C');
+        set @cterm = dbo.MCM_FN_CALC_TRM('C');
         declare @curyr as INT        = cast(left(@cterm,4) as int);
-        -- declare @nxtyr as INT        = @curyr + 1;
-        -- declare @prvyr as INT        = @curyr - 1;
-
-        -- declare @pterm as VARCHAR(6) = '2023SP'; -- for debugging
-        -- set @pterm = dbo.MCM_FN_CALC_TRM('P');
-        -- declare @pyr   as INT        = cast(left(@pterm,4) as int);
-
-        -- print @cterm +'/'+ cast(@curyr as varchar)
-
         SET @cterm = right(@cterm,2);
-        -- print concat('cterm=',@cterm,', yrs=[',@prvyr,',',@curyr,',',@nxtyr,']: pterm=',@pterm);
-        -- SET @pterm = right(@pterm,2);
 
 -- [JZMCM-SQL].[J1TEST].[dbo]. <== table prefix for LIVE-ish database
 -- select count(*) from namemaster;
@@ -54,44 +43,40 @@ cte_pop as (
                 AND sch.transaction_sts IN ( 'H', 'C', 'D' )
         )
             AND sm.CURRENT_CLASS_CDE NOT IN ( 'CE','NM','AV' )
-            AND dh.MAJOR_1 <> 'GEN' -- omit nonmatric
+            AND dh.MAJOR_1 <> 'NOM' -- omit nonmatric
             AND dh.cur_degree = 'Y'
 )
 ,
 cte_slateids as (
     SELECT
         ID_NUM,
-        max(case when IDENTIFIER_TYPE='SUG' then IDENTIFIER else null end) SUG,
-        max(case when IDENTIFIER_TYPE='SGPS' then IDENTIFIER else null end) SGPS
+        IDENTIFIER SCON,
+		JOB_TIME
     FROM
         ALTERNATE_IDENTIFIER ai WITH (nolock)
     WHERE
         ai.ID_NUM in ( select ID_NUM from cte_pop )
-        and ai.IDENTIFIER_TYPE in ('SUG','SGPS') -- FIXME no SGPS data in J1CONV, need to confirm with real data
+        and ai.IDENTIFIER_TYPE = 'SCON'
         and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
         and (ai.END_DTE is null or ai.END_DTE > getdate())
-    GROUP BY ID_NUM
 )
--- select * from cte_slateids where sgps > '!';
 ,
 cte_reg_seq as (
     SELECT
         ID_NUM,
         YR_CDE,
         TRM_CDE,
-        MIN(SEQ_NUM) seq -- or maybe this should be MAX for reg_clearance? FIXME
+        MAX(SEQ_NUM) seq
     FROM
         REG_CLEARANCE with (nolock)
     WHERE
         ID_NUM in ( SELECT ID_NUM FROM cte_pop )
         and
         YR_CDE = @curyr
-        -- and
-        -- TRM_CDE = @cterm
     GROUP BY
         ID_NUM,
         YR_CDE,
-        TRM_CDE
+        TRM_CDE 
 ),
 cte_reg_detail as (
     SELECT
@@ -118,7 +103,8 @@ cte_reg as (
         max(case when TRM_CDE='FA' then [TRM_CDE]+@curyr else null end) fa_regclr,
         max(case when TRM_CDE='SP' then [USER_NAME] else null end     ) sp_regclr_by,
         max(case when TRM_CDE='SP' then [JOB_TIME] else null end      ) sp_regclr_date,
-        max(case when TRM_CDE='SP' then [TRM_CDE]+@curyr else null end) sp_regclr
+        max(case when TRM_CDE='SP' then [TRM_CDE]+@curyr else null end) sp_regclr, 
+		max(job_time) job_time
     FROM
         cte_reg_detail
     GROUP BY
@@ -127,14 +113,14 @@ cte_reg as (
 ,
 cte_terms_detail as (
     SELECT
-    -- top 1000
         ID_NUM,
         TRM_CDE,
-        DIV_CDE + TRM_CDE       semyr,
-        LOCAL_HRS_GPA           gpa,
+        TRM_CDE + ' ' + YR_CDE  semyr,
+        TRM_GPA					gpa,
         TRM_HRS_ATTEMPT         attempted,
         TRM_HRS_ATTEMPT         reg_hrs,
-        TRM_HRS_EARNED          earned
+        TRM_HRS_EARNED          earned,
+		JOB_TIME
     FROM
         STUD_TERM_SUM_DIV with (nolock)
     -- order by id_num desc
@@ -166,62 +152,66 @@ cte_terms as (
         MAX(case when TRM_CDE='WI' then gpa else null end  ) wi_stuacad_gpa,
         MAX(case when TRM_CDE='WI' then attempted else null end) wi_stuacad_att_hrs,
         MAX(case when TRM_CDE='WI' then reg_hrs else null end) wi_stuacad_reg_hrs,
-        MAX(case when TRM_CDE='WI' then earned else null end   ) wi_stuacad_earn_hrs
+        MAX(case when TRM_CDE='WI' then earned else null end   ) wi_stuacad_earn_hrs,
+		MAX(JOB_TIME) job_time
     FROM
         cte_terms_detail
     GROUP BY
         ID_NUM
+),
+cteAll as (
+	SELECT
+		slate.SCON                      slate_guid,
+		pop.ID_NUM                      mc_id,
+		pop.DIV_CDE                     prog_code,
+
+		reg.fa_regclr,
+		reg.fa_regclr_by,
+		reg.fa_regclr_date,
+
+		reg.sp_regclr,
+		reg.sp_regclr_by,
+		reg.sp_regclr_date,
+
+		terms.fa_stuacad_att_hrs,
+		terms.fa_stuacad_earn_hrs,
+		terms.fa_stuacad_gpa,
+		terms.fa_stuacad_reg_hrs,
+		terms.fa_stuacad_semyr,
+
+		terms.sp_stuacad_att_hrs,
+		terms.sp_stuacad_earn_hrs,
+		terms.sp_stuacad_gpa,
+		terms.sp_stuacad_reg_hrs,
+		terms.sp_stuacad_semyr,
+
+		terms.su_stuacad_att_hrs,
+		terms.su_stuacad_earn_hrs,
+		terms.su_stuacad_gpa,
+		terms.su_stuacad_reg_hrs,
+		terms.su_stuacad_semyr,
+
+		terms.wi_stuacad_att_hrs,
+		terms.wi_stuacad_earn_hrs,
+		terms.wi_stuacad_gpa,
+		terms.wi_stuacad_reg_hrs,
+		terms.wi_stuacad_semyr, 
+		(SELECT MAX (v) FROM (VALUES (slate.JOB_TIME), (reg.JOB_TIME), (terms.JOB_TIME)) AS value(v)) as JOB_TIME
+	FROM
+		cte_pop pop
+		LEFT JOIN
+		cte_slateids slate
+			on pop.ID_NUM = slate.ID_NUM
+		LEFT JOIN
+		cte_reg reg
+			on pop.ID_NUM = reg.ID_NUM
+		LEFT JOIN
+		cte_terms terms
+			on pop.ID_NUM = terms.ID_NUM
 )
-
-SELECT
-    slate.SUG                       slate_id,
-    slate.SGPS                      slate_guid_asc,
-    pop.ID_NUM                      cx_id,
-    pop.DIV_CDE                     prog_code,
-
-    reg.fa_regclr,
-    reg.fa_regclr_by,
-    reg.fa_regclr_date,
-
-    reg.sp_regclr,
-    reg.sp_regclr_by,
-    reg.sp_regclr_date,
-
-    terms.fa_stuacad_att_hrs,
-    terms.fa_stuacad_earn_hrs,
-    terms.fa_stuacad_gpa,
-    terms.fa_stuacad_reg_hrs,
-    terms.fa_stuacad_semyr,
-
-    terms.sp_stuacad_att_hrs,
-    terms.sp_stuacad_earn_hrs,
-    terms.sp_stuacad_gpa,
-    terms.sp_stuacad_reg_hrs,
-    terms.sp_stuacad_semyr,
-
-    terms.su_stuacad_att_hrs,
-    terms.su_stuacad_earn_hrs,
-    terms.su_stuacad_gpa,
-    terms.su_stuacad_reg_hrs,
-    terms.su_stuacad_semyr,
-
-    terms.wi_stuacad_att_hrs,
-    terms.wi_stuacad_earn_hrs,
-    terms.wi_stuacad_gpa,
-    terms.wi_stuacad_reg_hrs,
-    terms.wi_stuacad_semyr
-
-FROM
-    cte_pop pop
-    LEFT JOIN
-    cte_slateids slate
-        on pop.ID_NUM = slate.ID_NUM
-    LEFT JOIN
-    cte_reg reg
-        on pop.ID_NUM = reg.ID_NUM
-    LEFT JOIN
-    cte_terms terms
-        on pop.ID_NUM = terms.ID_NUM
+SELECT *
+FROM cteAll
+WHERE cteAll.JOB_TIME >= @lastpull
 ;
 
     set nocount off;
