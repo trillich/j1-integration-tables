@@ -288,7 +288,7 @@ select
     bio.birthday,
     bio.gender,
     bio.ethnicity,
-    bio. hispanic,
+    bio.hispanic,
     bio.citizen, 
     bio.visa,
     bio.ferpa,

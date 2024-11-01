@@ -62,121 +62,119 @@ cte_slateids as (
 
 ,
 cte_fye as (
-    SELECT
+    SELECT 
         ID_NUM, 
-		JOB_TIME
+		max(JOB_TIME) JOB_TIME
     FROM
         STUDENT_CRS_HIST sch with (nolock)
     WHERE
-        ID_NUM in ( SELECT ID_NUM FROM cte_pop )
+        ID_NUM in ( select ID_NUM from cte_pop )
         and CRS_CDE like 'FYE%1050%' 
+	GROUP BY ID_NUM
 )
--- select * from cte_fye;
 ,
---cte_exam_detail as (
---    SELECT
---        t.ID_NUM,
---        t.TST_CDE,
---        -- t.TST_SEQ,
---		d.TST_SCORE TOTAL_COMPOS_SCORE, 
---        --t.TOTAL_COMPOS_SCORE,
---        d.TST_ELEM,
---        t.DTE_TAKEN, 
---		t.JOB_TIME ts_job_time, 
---		d.JOB_TIME tsd_job_time
---    FROM
---        TEST_SCORES t  with (nolock)
---        JOIN
---        TEST_SCORES_DETAIL d with (nolock)
---            on (t.id_num=d.id_num and t.tst_cde=d.tst_cde and t.tst_seq=d.tst_seq)
---    WHERE
---        t.ID_NUM in ( select ID_NUM from cte_pop )
---        and t.TST_CDE in ( 'MPE','SPA','ITA','FRE' )
---        and d.TST_ELEM in ('PART1','MPE','MPER','SPA','SPAR','ITA','ITAR','FRE','FRER')
---        -- and t.TOTAL_COMPOS_SCORE > 0
---)
----- select * from cte_exam_detail;
---,
---cte_exams as (
---    SELECT
---        ID_NUM,
---        max(case when tst_cde='MPE' then 'MPE' else null end) MPE_TEST,
---        max(case when tst_cde='MPE' and tst_elem='PART1' then TOTAL_COMPOS_SCORE else null end) MPE_SCORE,
---        max(case when tst_cde='MPE' and tst_elem='MPE'   then TOTAL_COMPOS_SCORE else null end) MPE_TOTAL,
---        max(case when tst_cde='MPE' and tst_elem='MPER'  then TOTAL_COMPOS_SCORE else null end) MPE_COURSE,
---        max(case when tst_cde='MPE'                      then DTE_TAKEN          else null end) MPE_UPLOAD_DATE,
---        max(case when tst_cde='SPA' then 'SPA' else null end) SPA_TEST,
---        max(case when tst_cde='SPA' and tst_elem='SPA'   then TOTAL_COMPOS_SCORE else null end) SPA_SCORE,
---        max(case when tst_cde='SPA' and tst_elem='SPAR'  then TOTAL_COMPOS_SCORE else null end) SPA_COURSE,
---        max(case when tst_cde='SPA'                      then DTE_TAKEN          else null end) SPA_UPLOAD_DATE,
---        max(case when tst_cde='ITA' then 'ITA' else null end) ITA_TEST,
---        max(case when tst_cde='ITA' and tst_elem='ITA'   then TOTAL_COMPOS_SCORE else null end) ITA_SCORE,
---        max(case when tst_cde='ITA' and tst_elem='ITAR'  then TOTAL_COMPOS_SCORE else null end) ITA_COURSE,
---        max(case when tst_cde='ITA'                      then DTE_TAKEN          else null end) ITA_UPLOAD_DATE,
---        max(case when tst_cde='FRE' then 'FRE' else null end) FRA_TEST,
---        max(case when tst_cde='FRE' and tst_elem='FRE'   then TOTAL_COMPOS_SCORE else null end) FRA_SCORE,
---        max(case when tst_cde='FRE' and tst_elem='FRER'  then TOTAL_COMPOS_SCORE else null end) FRA_COURSE,
---        max(case when tst_cde='FRE'                      then DTE_TAKEN          else null end) FRA_UPLOAD_DATE, 
---		max(ts_job_time) ts_job_time, 
---		max(tsd_job_time) tsd_job_time
---    FROM
---        cte_exam_detail
---    GROUP BY
---        ID_NUM
---),
--- select * from cte_exams where FRE_TEST > '!';
-cte_exams as (
-	SELECT ID_NUM, MAX(FRE) FRA_SCORE, MAX(FRER) FRA_COURSE, MAX(DTE_TAKEN) FRA_UPLOAD_DATE, 
-		MAX(ITA) ITA_SCORE, MAX(ITAR) ITA_COURSE, MAX(DTE_TAKEN) ITA_UPLOAD_DATE,
-		MAX(SPA) SPA_SCORE, MAX(SPAR) SPA_COURSE, MAX(DTE_TAKEN) SPA_UPLOAD_DATE,
-		MAX(PART1) MPE_SCORE, MAX(MCOMP) MPE_TOTAL, MAX(MPER) MPE_COURSE, MAX(DTE_TAKEN) MPE_UPLOAD_DATE, MAX(job_time) JOB_TIME
+cte_fr as (
+	SELECT ID_NUM, MAX(APPID) APPID, MAX(FRE) FRA_SCORE, MAX(FRER) FRA_COURSE, MAX(DTE_TAKEN) FRA_UPLOAD_DATE, MAX(job_time) JOB_TIME
 	FROM (
-			SELECT ts.ID_NUM, ts.DTE_TAKEN, tsd.TST_ELEM, tsd.TST_SCORE, ts.JOB_TIME
+			SELECT ts.ID_NUM, ts.APPID, ts.DTE_TAKEN, tsd.TST_ELEM, tsd.TST_SCORE, ts.JOB_TIME
 			FROM TEST_SCORES ts WITH (NOLOCK)
 				inner join TEST_SCORES_DETAIL tsd WITH (NOLOCK) on ts.ID_NUM = tsd.ID_NUM and ts.tst_cde=tsd.tst_cde and ts.tst_seq=tsd.tst_seq
-			WHERE tsd.TST_ELEM IN ('FRE', 'FRER', 'ITA', 'ITAR', 'SPA', 'SPAR', 'MCOMP', 'MPER', 'PART1') 
+			WHERE tsd.TST_ELEM IN ('FRE', 'FRER') 
 				AND ts.ID_NUM IN ( select ID_NUM from cte_pop )
 		) d
 		PIVOT
 		(
 			MAX(TST_SCORE)
-			FOR TST_ELEM IN (FRE, FRER, ITA, ITAR, SPA, SPAR, MCOMP, MPER, PART1) 
+			FOR TST_ELEM IN (FRE, FRER) 
+		) piv
+	GROUP BY ID_NUM, APPID
+),
+cte_sp as (
+	SELECT ID_NUM, MAX(APPID) APPID, MAX(SPA) SPA_SCORE, MAX(SPAR) SPA_COURSE, MAX(DTE_TAKEN) SPA_UPLOAD_DATE, MAX(job_time) JOB_TIME
+	FROM (
+			SELECT ts.ID_NUM, ts.APPID, ts.DTE_TAKEN, tsd.TST_ELEM, tsd.TST_SCORE, ts.JOB_TIME
+			FROM TEST_SCORES ts WITH (NOLOCK)
+				inner join TEST_SCORES_DETAIL tsd WITH (NOLOCK) on ts.ID_NUM = tsd.ID_NUM and ts.tst_cde=tsd.tst_cde and ts.tst_seq=tsd.tst_seq
+			WHERE tsd.TST_ELEM IN ('SPA', 'SPAR') 
+				AND ts.ID_NUM IN ( select ID_NUM from cte_pop )
+		) d
+		PIVOT
+		(
+			MAX(TST_SCORE)
+			FOR TST_ELEM IN (SPA, SPAR) 
+		) piv
+	GROUP BY ID_NUM
+),
+cte_it as (
+	SELECT ID_NUM, MAX(APPID) APPID, MAX(ITA) ITA_SCORE, MAX(ITAR) ITA_COURSE, MAX(DTE_TAKEN) ITA_UPLOAD_DATE, MAX(job_time) JOB_TIME
+	FROM (
+			SELECT ts.ID_NUM, ts.APPID, ts.DTE_TAKEN, tsd.TST_ELEM, tsd.TST_SCORE, ts.JOB_TIME
+			FROM TEST_SCORES ts WITH (NOLOCK)
+				inner join TEST_SCORES_DETAIL tsd WITH (NOLOCK) on ts.ID_NUM = tsd.ID_NUM and ts.tst_cde=tsd.tst_cde and ts.tst_seq=tsd.tst_seq
+			WHERE tsd.TST_ELEM IN ('ITA', 'ITAR') 
+				AND ts.ID_NUM IN ( select ID_NUM from cte_pop )
+		) d
+		PIVOT
+		(
+			MAX(TST_SCORE)
+			FOR TST_ELEM IN (ITA, ITAR) 
+		) piv
+	GROUP BY ID_NUM
+),
+cte_mpe as (
+	SELECT ID_NUM, MAX(APPID) APPID, MAX(PART1) MPE_SCORE, MAX(MCOMP) MPE_TOTAL, MAX(MPER) MPE_COURSE, MAX(DTE_TAKEN) MPE_UPLOAD_DATE, MAX(job_time) JOB_TIME
+	FROM (
+			SELECT ts.ID_NUM, ts.APPID, ts.DTE_TAKEN, tsd.TST_ELEM, tsd.TST_SCORE, ts.JOB_TIME
+			FROM TEST_SCORES ts WITH (NOLOCK)
+				inner join TEST_SCORES_DETAIL tsd WITH (NOLOCK) on ts.ID_NUM = tsd.ID_NUM and ts.tst_cde=tsd.tst_cde and ts.tst_seq=tsd.tst_seq
+			WHERE tsd.TST_ELEM IN ('MCOMP', 'MPER', 'PART1') 
+				AND ts.ID_NUM IN ( select ID_NUM from cte_pop )
+		) d
+		PIVOT
+		(
+			MAX(TST_SCORE)
+			FOR TST_ELEM IN (MCOMP, MPER, PART1) 
 		) piv
 	GROUP BY ID_NUM
 ),
 
 cteAll as (
 	SELECT
-		s.SCON          slate_guid,
+		--s.SCON          slate_guid,
 		p.ID_NUM        mc_id,
-		case when f.ID_NUM > 0 then 'Y' else 'N' end
-						fye_attended,
-		CASE WHEN x.MPE_SCORE is not null THEN 'MPE' ELSE NULL END mpe_test,
-		x.mpe_score,
-		x.mpe_total,
-		x.mpe_course,
-		CASE WHEN x.MPE_SCORE is not null THEN x.MPE_UPLOAD_DATE ELSE NULL END mpe_upload_date,
-		CASE WHEN x.SPA_SCORE is not null THEN 'SPA' ELSE NULL END spa_test,
-		x.spa_score,
-		x.spa_course,
-		CASE WHEN x.SPA_SCORE is not null THEN x.SPA_UPLOAD_DATE ELSE NULL END spa_upload_date,
-		CASE WHEN x.ITA_SCORE is not null THEN 'ITA' ELSE NULL END ita_test,
-		x.ita_score,
-		x.ita_course,
-		CASE WHEN x.ITA_SCORE is not null THEN x.ITA_UPLOAD_DATE ELSE NULL END ita_upload_date,
-		CASE WHEN x.FRA_SCORE is not null THEN 'FRA' ELSE NULL END fra_test,
-		x.fra_score,
-		x.fra_course,
-		CASE WHEN x.FRA_SCORE is not null THEN x.FRA_UPLOAD_DATE ELSE NULL END fra_upload_date, 
-		(SELECT MAX (v) FROM (VALUES (s.JOB_TIME), (x.JOB_TIME), (f.JOB_TIME)) AS value(v)) as JOB_TIME
+		--case when f.ID_NUM > 0 then 'Y' else 'N' end
+		--				fye_attended,
+		mpe.APPID as mpe_appid,
+		CASE WHEN mpe.MPE_SCORE is not null THEN 'MPE' ELSE NULL END mpe_test,
+		mpe.mpe_score,
+		mpe.mpe_total,
+		mpe.mpe_course,
+		CASE WHEN mpe.MPE_SCORE is not null THEN mpe.MPE_UPLOAD_DATE ELSE NULL END mpe_upload_date,
+		sp.APPID as sp_appid,
+		CASE WHEN sp.SPA_SCORE is not null THEN 'SPA' ELSE NULL END spa_test,
+		sp.spa_score,
+		sp.spa_course,
+		CASE WHEN sp.SPA_SCORE is not null THEN sp.SPA_UPLOAD_DATE ELSE NULL END spa_upload_date,
+		it.APPID as it_appid,
+		CASE WHEN it.ITA_SCORE is not null THEN 'ITA' ELSE NULL END ita_test,
+		it.ita_score,
+		it.ita_course,
+		CASE WHEN it.ITA_SCORE is not null THEN it.ITA_UPLOAD_DATE ELSE NULL END ita_upload_date,
+		fr.APPID as fr_appid,
+		CASE WHEN fr.FRA_SCORE is not null THEN 'FRA' ELSE NULL END fra_test,
+		fr.fra_score,
+		fr.fra_course,
+		CASE WHEN fr.FRA_SCORE is not null THEN fr.FRA_UPLOAD_DATE ELSE NULL END fra_upload_date,
+		(SELECT MAX (v) FROM (VALUES (s.JOB_TIME), (fr.JOB_TIME), (sp.JOB_TIME), (it.JOB_TIME), (mpe.JOB_TIME), (f.JOB_TIME)) AS value(v)) as JOB_TIME
 	FROM
 		cte_pop p
-		JOIN
-		cte_exams x on (p.ID_NUM = x.ID_NUM)
-		LEFT JOIN
-		cte_fye f on (x.ID_NUM = f.ID_NUM)
-		LEFT JOIN
-		cte_slateids s on (x.ID_NUM = s.ID_NUM)
+		LEFT JOIN cte_fr fr on (p.ID_NUM = fr.ID_NUM)
+		LEFT JOIN cte_sp sp on (p.ID_NUM = sp.ID_NUM) 
+		LEFT JOIN cte_it it on (p.ID_NUM = it.ID_NUM) 
+		LEFT JOIN cte_mpe mpe on (p.ID_NUM = mpe.ID_NUM) 
+		LEFT JOIN cte_fye f on (p.ID_NUM = f.ID_NUM)
+		LEFT JOIN cte_slateids s on (p.ID_NUM = s.ID_NUM)
+	WHERE (fr.ID_NUM IS NOT NULL AND sp.ID_NUM IS NOT NULL AND it.ID_NUM IS NOT NULL AND MPE.ID_NUM IS NOT NULL AND f.ID_NUM IS NOT NULL)
 )
 SELECT *
 FROM cteAll

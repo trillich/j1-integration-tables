@@ -142,61 +142,49 @@ cte_slateids as (
         and (ai.BEGIN_DTE is null or ai.BEGIN_DTE <= getdate())
         and (ai.END_DTE is null or ai.END_DTE > getdate())
 ),
-cte_chg as (
-	SELECT chgs.mc_id, MAX(chgs.JOB_TIME) JOB_TIME
-	FROM (
-		SELECT mc_id, JOB_TIME FROM cte_can WHERE JOB_TIME >= @lastpull
-		UNION ALL
-		SELECT ID_NUM mc_id, JOB_TIME FROM cte_names WHERE JOB_TIME >= @lastpull
-		UNION ALL
-		SELECT ID_NUM mc_id, JOB_TIME FROM cte_bio WHERE JOB_TIME >= @lastpull
-		UNION ALL
-		SELECT ID_NUM mc_id, JOB_TIME FROM cte_email WHERE JOB_TIME >= @lastpull
-		UNION ALL
-		SELECT ID_NUM mc_id, JOB_TIME FROM cte_slateids WHERE JOB_TIME >= @lastpull
-	) chgs
-	GROUP BY chgs.mc_id
+cteAll as (
+	SELECT
+		slt.SCON slate_id,
+		case
+			when slt.adm_prog='GR' then slt.SGPS
+			when slt.adm_prog='UG' then slt.SUG
+			else ''
+		end                 slate_guid, -- person guid based on program
+		can.Slate_AppID             slate_appid, 
+		mc_id,
+		first_name,
+		pref_first_name,
+		last_name,
+		middle_name,
+		suffix_name,
+		email,
+		birthday,
+		adm_plansessyr,
+		can.adm_prog,
+		can.adm_major,
+		can.adm_enrstat,
+		can.adm_decsn_code,
+		can.adm_decsn_date, 
+		(SELECT MAX (v) FROM (VALUES (can.JOB_TIME), (names.JOB_TIME), (bio.JOB_TIME), (email.JOB_TIME), (slt.JOB_TIME)) AS value(v)) as JOB_TIME
+	FROM
+		cte_can can
+		JOIN
+		cte_names names
+			on ( can.mc_id = names.ID_NUM )
+		LEFT JOIN
+		cte_bio bio
+			on ( can.mc_id = bio.ID_NUM )
+		LEFT JOIN
+		cte_email email
+			on ( can.mc_id = email.ID_NUM )
+		LEFT JOIN
+		cte_slateids slt
+			on ( can.mc_id = slt.ID_NUM )
 )
-
-SELECT
-	slt.SCON slate_id,
-    case
-        when slt.adm_prog='GR' then slt.SGPS
-        when slt.adm_prog='UG' then slt.SUG
-        else ''
-    end                 slate_guid, -- person guid based on program
-    can.Slate_AppID             slate_appid, 
-    mc_id,
-    first_name,
-    pref_first_name,
-    last_name,
-    middle_name,
-    suffix_name,
-    email,
-    birthday,
-    adm_plansessyr,
-    can.adm_prog,
-    can.adm_major,
-    can.adm_enrstat,
-    can.adm_decsn_code,
-    can.adm_decsn_date
-FROM
-    cte_can can
-    JOIN
-    cte_names names
-        on ( can.mc_id = names.ID_NUM )
-    LEFT JOIN
-    cte_bio bio
-        on ( can.mc_id = bio.ID_NUM )
-    LEFT JOIN
-    cte_email email
-        on ( can.mc_id = email.ID_NUM )
-    LEFT JOIN
-    cte_slateids slt
-        on ( can.mc_id = slt.ID_NUM )
-WHERE can.mc_id IN (SELECT mc_id from cte_chg)
-ORDER BY
-    mc_id
+SELECT * 
+FROM cteAll
+WHERE cteAll.JOB_TIME >= @lastpull
+ORDER BY cteAll.mc_id
     ;
 
     set nocount off;

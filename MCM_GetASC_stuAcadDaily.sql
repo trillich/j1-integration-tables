@@ -120,6 +120,7 @@ cte_terms_detail as (
         TRM_HRS_ATTEMPT         attempted,
         TRM_HRS_ATTEMPT         reg_hrs,
         TRM_HRS_EARNED          earned,
+		APPID,
 		JOB_TIME
     FROM
         STUD_TERM_SUM_DIV with (nolock)
@@ -133,22 +134,26 @@ cte_terms_detail as (
 cte_terms as (
     SELECT
         ID_NUM,
+		MAX(case when TRM_CDE='FA' then appid else null end) fa_stuacad_appid,
         MAX(case when TRM_CDE='FA' then semyr else null end) fa_stuacad_semyr,
         MAX(case when TRM_CDE='FA' then gpa else null end  ) fa_stuacad_gpa,
         MAX(case when TRM_CDE='FA' then attempted else null end) fa_stuacad_att_hrs,
         MAX(case when TRM_CDE='FA' then reg_hrs else null end) fa_stuacad_reg_hrs,
         MAX(case when TRM_CDE='FA' then earned else null end   ) fa_stuacad_earn_hrs,
+		MAX(case when TRM_CDE='SP' then appid else null end) sp_stuacad_appid,
         MAX(case when TRM_CDE='SP' then semyr else null end) sp_stuacad_semyr,
         MAX(case when TRM_CDE='SP' then gpa else null end  ) sp_stuacad_gpa,
         MAX(case when TRM_CDE='SP' then attempted else null end) sp_stuacad_att_hrs,
         MAX(case when TRM_CDE='SP' then reg_hrs else null end) sp_stuacad_reg_hrs,
         MAX(case when TRM_CDE='SP' then earned else null end   ) sp_stuacad_earn_hrs,
+		MAX(case when TRM_CDE='SU' then appid else null end) su_stuacad_appid,
         MAX(case when TRM_CDE='SU' then semyr else null end) su_stuacad_semyr,
         MAX(case when TRM_CDE='SU' then gpa else null end  ) su_stuacad_gpa,
         MAX(case when TRM_CDE='SU' then attempted else null end) su_stuacad_att_hrs,
         MAX(case when TRM_CDE='SU' then reg_hrs else null end) su_stuacad_reg_hrs,
         MAX(case when TRM_CDE='SU' then earned else null end   ) su_stuacad_earn_hrs,
         MAX(case when TRM_CDE='WI' then semyr else null end) wi_stuacad_semyr,
+		MAX(case when TRM_CDE='WI' then appid else null end) wi_stuacad_appid,
         MAX(case when TRM_CDE='WI' then gpa else null end  ) wi_stuacad_gpa,
         MAX(case when TRM_CDE='WI' then attempted else null end) wi_stuacad_att_hrs,
         MAX(case when TRM_CDE='WI' then reg_hrs else null end) wi_stuacad_reg_hrs,
@@ -173,24 +178,28 @@ cteAll as (
 		reg.sp_regclr_by,
 		reg.sp_regclr_date,
 
+		terms.fa_stuacad_appid,
 		terms.fa_stuacad_att_hrs,
 		terms.fa_stuacad_earn_hrs,
 		terms.fa_stuacad_gpa,
 		terms.fa_stuacad_reg_hrs,
 		terms.fa_stuacad_semyr,
 
+		terms.sp_stuacad_appid, 
 		terms.sp_stuacad_att_hrs,
 		terms.sp_stuacad_earn_hrs,
 		terms.sp_stuacad_gpa,
 		terms.sp_stuacad_reg_hrs,
 		terms.sp_stuacad_semyr,
 
+		terms.su_stuacad_appid, 
 		terms.su_stuacad_att_hrs,
 		terms.su_stuacad_earn_hrs,
 		terms.su_stuacad_gpa,
 		terms.su_stuacad_reg_hrs,
 		terms.su_stuacad_semyr,
 
+		terms.wi_stuacad_appid, 
 		terms.wi_stuacad_att_hrs,
 		terms.wi_stuacad_earn_hrs,
 		terms.wi_stuacad_gpa,

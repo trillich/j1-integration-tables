@@ -75,7 +75,7 @@ cte_slateids as (
 ,
 cte_crs as (
     SELECT
-		crs.APPID UniqueRecID, --This will be used in Slate to find an existing record and only update
+		crs.APPID, --This will be used in Slate to find an existing record and only perform an update
         crs.ID_NUM,
         crs.STUD_DIV,
         crs.trm_cde + crs.yr_cde    cw_sessyr,
@@ -175,7 +175,7 @@ cte_fac as (
 ,
 cteAll as (
 	SELECT
-	crs.UniqueRecID, 
+	crs.APPID, 
     slate.SCON			slate_guid,
     pop.ID_NUM          mc_id,
     pop.DIV_CDE         cw_prog,
