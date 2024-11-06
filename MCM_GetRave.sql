@@ -33,10 +33,10 @@ BEGIN
         For WINTER/SUMMER session:
         -   uses begin/end date from acad_cal_rec for STU type
         For SPRING:
-        -   uses acad_cal_rec.beg_date -7days to +10days for APP type
-        -   uses acad_cal_rec.beg_date -7days to +20days for STU type
+        -   uses acad_cal_rec.beg_date -7days to end_date +10days for APP type
+        -   uses acad_cal_rec.beg_date -7days to end_date +20days for STU type
         For FALL it uses prev/next:
-        -   uses acad_cal_rec.beg_date -12weeks to +10days for APP type
+        -   uses acad_cal_rec.beg_date -12weeks to end_date +10days for APP type
         -   For STU type, uses SPRING semester before and after:
             uses acad_cal_rec for PREV SP: end_date +3weeks (start date)
             acad_cal_rec for NEXT SP: beg_date -8days (end date)
@@ -78,12 +78,14 @@ cte_calendar as (
         cast(TRM_BEGIN_DTE as date) begins,
         cast(TRM_END_DTE as date) ends
     FROM
-        YEAR_TERM_TABLE cal with (nolock)
+        YEAR_TERM_TABLE with (nolock)
     WHERE
         yr_cde in ( @prvyr, @curyr ) -- kinda moot but don't hurt nuthin
         AND
         TRM_CDE in ( 'FA','SP','SU','WI' )
-),
+)
+-- select * from cte_calendar order by begins
+,
 cte_cal as (
     SELECT
         -- registered student related starts/ends:
@@ -91,52 +93,52 @@ cte_cal as (
             when cur.trm_cde in ( 'SU','WI' )
             then cur.begins
             when cur.trm_cde = 'SP'
-            then dateadd(day,-7,cur.begins) -- 7 days before SPRING starts
+            then dateadd( day, -7, cur.begins ) -- 7 days before session starts
             when cur.trm_cde = 'FA'
-            then dateadd(week,+3,prv_sp.ends) -- 3 weeks after PREV SPRING ended
+            then dateadd( week, +3, prev_sp.ends ) -- 3 weeks after PREV SPRING ended
         end stu_begins,
         case
             when cur.trm_cde in ( 'SU','WI' )
             then cur.ends
             when cur.trm_cde = 'SP'
-            then dateadd(day,+20,cur.ends) -- 20 days after SPRING ends
+            then dateadd( day, +20, cur.ends ) -- 20 days after session ends
             when cur.trm_cde = 'FA'
-            then dateadd(day,-7,nxt_sp.begins) -- 7 days before NEXT SPRING starts
+            then dateadd( day, -7, next_sp.begins ) -- 7 days before NEXT SPRING starts
         end stu_ends,
         -- applicant related starts/ends:
         case
             when cur.trm_cde in ( 'SU','WI' )
-            then cur.ends
+            then cur.begins
             when cur.trm_cde = 'SP'
-            then dateadd(day,-7,cur.begins) -- 7 days before SPRING starts
+            then dateadd( day, -7, cur.begins ) -- 7 days before session starts
             when cur.trm_cde = 'FA'
-            then dateadd(week,-12,cur.begins) -- 12 weeks before FALL starts
+            then dateadd( week, -12, cur.begins ) -- 12 weeks before session starts
         end app_begins,
         case
             when cur.trm_cde in ( 'SU','WI' )
             then cur.ends
             when cur.trm_cde = 'SP'
-            then dateadd(day,+10,cur.ends) -- 10 days after SPRING ends
+            then dateadd( day, +10, cur.ends ) -- 10 days after session ends
             when cur.trm_cde = 'FA'
-            then dateadd(day,+10,cur.ends) -- 10 days after FALL ends
+            then dateadd( day, +10, cur.ends ) -- 10 days after session ends
         end app_ends,
-        -- prv_sp.ends prev_sp_ends,
-        -- nxt_sp.begins nxt_sp_begins,
+        -- prev_sp.ends prev_sp_ends,
+        -- next_sp.begins nxt_sp_begins,
         cur.*
     FROM
         cte_calendar cur
         LEFT JOIN
         -- for FALL we need NEXT spring dates
-        cte_calendar nxt_sp -- same acad year (different calendar), different semester
+        cte_calendar next_sp -- same acad year (different calendar), different semester
             on cur.TRM_CDE = 'FA'
-            and nxt_sp.TRM_CDE = 'SP'
-            and cur.YR_CDE = nxt_sp.YR_CDE
+            and next_sp.TRM_CDE = 'SP'
+            and cur.YR_CDE = next_sp.YR_CDE
         LEFT JOIN
         -- for FALL we need PREVIOUS spring dates
-        cte_calendar prv_sp -- different acad year (same calendar), different semester
+        cte_calendar prev_sp -- different acad year (same calendar), different semester
             on cur.TRM_CDE = 'FA'
-            and prv_sp.TRM_CDE = 'SP'
-            and cur.YR_CDE - 1 = prv_sp.YR_CDE
+            and prev_sp.TRM_CDE = 'SP'
+            and cur.YR_CDE - 1 = prev_sp.YR_CDE
 )
 -- select * from cte_cal -- where getdate() between stu_begins and stu_ends 
 -- order by YR_CDE,begins,ends 
@@ -146,7 +148,7 @@ cteEmpl as (
     SELECT DISTINCT
         ID_NUM,
         'FIXME' ephone, -- office phone (cx prepended 978837 to ext and called it 'ephone')
-        '' landline1_services -- sometimes 0, usually ''
+        '' landline1_services -- if extension has digits, then '0' else '' FIXME (probably not significant)
     FROM
         EMPL_MAST emp with (nolock) -- FIXME is this the canonical place for employees?
     WHERE
