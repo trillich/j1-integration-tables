@@ -6,25 +6,32 @@ GO
 -- =============================================
 -- Author:		Will Trillich (Serensoft)	
 -- Create date: 10-Jan-2025
--- Description:	For students with courses but no housing assignment, create a housing assignment
+-- Description:	For students with courses but no housing assignment, create placeholder housing record
 -- Modified:	
 -- 
 -- =============================================
-CREATE PROCEDURE [dbo].[MCM_PostFixHousing] 
+ALTER PROCEDURE [dbo].[MCM_PostFixHousing] 
 AS
 
 BEGIN
+
+    -- transaction voodoo from https://rusanu.com/2009/06/11/exception-handling-and-nested-transactions/
+
+	SET XACT_ABORT ON;
+	SET NOCOUNT ON;
+
     DECLARE -- iterators
         @id_num int = 0,
         @sess varchar(10) = '';
     DECLARE -- local util vars
         @ct int = 0,
         @job varchar(30) = 'MCM_PostFixHousing',
-        @msg varchar(255);
+        @msg varchar(999),
+        @xct int = @@TRANCOUNT; -- already in a transaction?
     DECLARE -- cursor to iterate thru
         stu_crsr CURSOR FOR
 
-        with
+        WITH
         cte_term as (
             -- active semesters
             select distinct
@@ -64,10 +71,10 @@ BEGIN
                 sch.transaction_sts in ('C','H')
         )
         -- select crs.* from cte_crs crs;
-        select
+        SELECT
             crs.id_num,
             crs.sess
-        from
+        FROM
             cte_crs crs
             left join
             cte_ssa ssa
@@ -80,7 +87,13 @@ BEGIN
     BEGIN TRY
         SET NOCOUNT ON;
         SET XACT_ABORT ON;
-        BEGIN TRANSACTION;
+
+        if @xct = 0
+            -- we weren't already in a transaction, so start one
+            BEGIN TRANSACTION;
+        else
+            -- we were already in a transaction, so save it
+            SAVE TRANSACTION @job;
 
         OPEN stu_crsr;
         FETCH NEXT FROM stu_crsr INTO @id_num, @sess;
@@ -104,7 +117,7 @@ BEGIN
                 'N',
                 0,
                 0,
-                'N'
+                'U'
             );
             SET @ct = @ct + 1;
 
@@ -114,27 +127,34 @@ BEGIN
         CLOSE stu_crsr;
         DEALLOCATE stu_crsr;
 
-        COMMIT TRANSACTION;
+        if @xct = 0
+            -- we weren't already in a transaction, but we made our own, so commit:
+            COMMIT TRANSACTION;
+
     END TRY
     BEGIN CATCH
-
-		IF (XACT_STATE()) = -1
-            ROLLBACK TRANSACTION;
-        if (XACT_STATE()) = 1
-            COMMIT TRANSACTION;
 
         DECLARE @ErrorMessage NVARCHAR(4000);
         DECLARE @ErrorSeverity INT;
         DECLARE @ErrorState INT;
+        DECLARE @XState INT;
         SELECT
             @ErrorMessage = ERROR_MESSAGE(),
             @ErrorSeverity = ERROR_SEVERITY(),
-            @ErrorState = ERROR_STATE();
+            @ErrorState = ERROR_STATE(),
+            @XState = XACT_STATE();
+
+        if @XState = -1
+            ROLLBACK
+        if @XState = 1 and @xct = 0
+            ROLLBACK
+        if @XState = 1 and @xct > 0
+            ROLLBACK TRANSACTION @job;
 
 		SET @msg = 'SP ' + @job + ' Ct=' + cast(@ct as varchar) + ', Error(' + Cast(Error_Number() AS varchar(10)) + '): ' + @ErrorMessage;
 
-		exec MCM_Error_Handler @Message, @id_num, @job;
-        RAISERROR (N'%s', @ErrorSeverity, @ErrorState, @Message );
+		exec MCM_Error_Handler @msg, @id_num, @job;
+        RAISERROR (N'%s', @ErrorSeverity, @ErrorState, @msg );
     END CATCH
 
     REVERT;
