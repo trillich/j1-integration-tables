@@ -84,13 +84,15 @@ BEGIN
     END
 
     DECLARE
-        @bookno     int = 0,
-        @secno      varchar(20) = @course + ' ' + @section,
-        @course_ok  int = 0,
+        @bookno     int           = 0,
+        @secno      varchar(20)   = @course + ' ' + @section,
+        @course_ok  int           = 0,
 
         @msg        varchar(5000) = '',
-        @job        varchar(20) = 'MCM_PostBBAbooks',
-        @user       varchar(500) = ORIGINAL_LOGIN();
+        @job        varchar(20)   = 'MCM_PostBBAbooks',
+        @user       varchar(500)  = ORIGINAL_LOGIN(),
+        @xct        int           = @@TRANCOUNT;
+        -- transaction voodoo from https://rusanu.com/2009/06/11/exception-handling-and-nested-transactions/
 
     -- Make sure we have a valid course/section:
     SELECT @course_ok = count(*)
@@ -106,12 +108,19 @@ BEGIN
 
     BEGIN TRY
 
+        if @xct = 0
+            -- we weren't already in a transaction, so start one
+            BEGIN TRANSACTION;
+        else
+            -- we were already in a transaction, so save it
+            SAVE TRANSACTION @job;
+
         ------------------------------
         -- Handle TEXTBOOK_DEF record:
         ------------------------------
         MERGE INTO textbook_def AS tgt
         USING (
-            SELECT TOP 1
+            SELECT
                 @isbn   AS isbn,
                 @author AS authors,
                 @title  AS book_title
@@ -119,7 +128,7 @@ BEGIN
         ON (tgt.isbn_cde = src.isbn OR tgt.isbn_13 = src.isbn)
         WHEN MATCHED THEN
             UPDATE
-            SET @bookno        = tgt.book_seq_num,
+            SET @bookno        = tgt.book_seq_num, -- <== tricky tricky CHEATING :)
                 tgt.authors    = src.authors,
                 tgt.book_title = src.book_title,
                 tgt.user_name  = @user,
@@ -130,7 +139,7 @@ BEGIN
             VALUES (src.isbn, src.isbn, src.authors, src.book_title, @user, @job, getdate())
             -- according to https://www.sqlservercentral.com/articles/the-output-clause-for-the-merge-statements
             -- this should work for UPDATE and for INSERT
-        -- OUTPUT inserted.book_seq_num INTO @bookno
+        -- OUTPUT inserted.book_seq_num INTO @bookno # nope, need table-var not int-var
         ;
         SET @bookno = ISNULL(@bookno,SCOPE_IDENTITY());
 
@@ -182,20 +191,25 @@ BEGIN
             ON tgt.book_seq_num=src.book_seq_num
                 AND tgt.cost_price_type = src.cost_price_type
             WHEN NOT MATCHED THEN
+                -- sale item not found, so add it:
                 INSERT (book_seq_num,cost_price_type,price,user_name,job_name,job_time)
                 VALUES(src.book_seq_num,src.cost_price_type,src.price,@user,@job,getdate())
             WHEN MATCHED THEN
+                -- sale item FOUND, just make sure it's current:
                 UPDATE SET
                     tgt.price     = src.price,
                     tgt.user_name = @user,
                     tgt.job_name  = @job,
                     tgt.job_time  = getdate()
-            WHEN NOT MATCHED BY SOURCE
-            -- probably no matches, but let's be thorough:
-            THEN DELETE;
-            
+            ;
         END
-
+        ELSE
+        BEGIN
+            -- price NULL or <0.0 so we ain't got none to sell
+            DELETE FROM textbook_cost_price
+            WHERE book_seq_num = @bookno
+              AND cost_price_type = 'JN'
+        END
 
         -- Used book for sale:
         if @SaleUsed > 0.0
@@ -210,18 +224,24 @@ BEGIN
             ON tgt.book_seq_num=src.book_seq_num
                 AND tgt.cost_price_type = src.cost_price_type
             WHEN NOT MATCHED THEN
+                -- sale item not found, so add it:
                 INSERT (book_seq_num,cost_price_type,price,user_name,job_name,job_time)
                 VALUES(src.book_seq_num,src.cost_price_type,src.price,@user,@job,getdate())
             WHEN MATCHED THEN
+                -- sale item FOUND, just make sure it's current:
                 UPDATE SET
                     tgt.price     = src.price,
                     tgt.user_name = @user,
                     tgt.job_name  = @job,
                     tgt.job_time  = getdate()
-            WHEN NOT MATCHED BY SOURCE
-            -- probably no matches, but let's be thorough:
-            THEN DELETE;
-
+            ;
+        END
+        ELSE
+        BEGIN
+            -- price NULL or <0.0 so we ain't got none to sell
+            DELETE FROM textbook_cost_price
+            WHERE book_seq_num = @bookno
+              AND cost_price_type = 'JU'
         END
 
         -- Used book for rent:
@@ -237,35 +257,50 @@ BEGIN
             ON tgt.book_seq_num=src.book_seq_num
                 AND tgt.cost_price_type = src.cost_price_type
             WHEN NOT MATCHED THEN
+                -- sale item not found, so add it:
                 INSERT (book_seq_num,cost_price_type,price,user_name,job_name,job_time)
                 VALUES(src.book_seq_num,src.cost_price_type,src.price,@user,@job,getdate())
             WHEN MATCHED THEN
+                -- sale item FOUND, just make sure it's current:
                 UPDATE SET
                     tgt.price     = src.price,
                     tgt.user_name = @user,
                     tgt.job_name  = @job,
                     tgt.job_time  = getdate()
-            WHEN NOT MATCHED BY SOURCE
-            -- probably no matches, but let's be thorough:
-            THEN DELETE;
+            ;
         END
+        ELSE
+        BEGIN
+            -- price NULL or <0.0 so we ain't got none to rent
+            DELETE FROM textbook_cost_price
+            WHERE book_seq_num = @bookno
+              AND cost_price_type = 'JR'
+        END
+
+        if @xct = 0
+            -- we weren't already in a transaction, we made our own:
+            COMMIT TRANSACTION;
 
     END TRY
     BEGIN CATCH
-		SET @msg = 'SP ' + @job + ' Error(' + Cast(Error_Number() AS varchar(10)) + '): ' + Error_Message();
-		DECLARE @errorseverity int;
-		DECLARE @errorstate int;
+        DECLARE @ErrorMessage NVARCHAR(4000);
+        DECLARE @ErrorSeverity INT;
+        DECLARE @ErrorState INT;
+        DECLARE @XState INT;
+        SELECT
+            @ErrorMessage   = ERROR_MESSAGE(),
+            @ErrorSeverity  = ERROR_SEVERITY(),
+            @ErrorState     = ERROR_STATE(),
+            @XState         = XACT_STATE();
 
-		SELECT @errorseverity = ERROR_SEVERITY(), @errorstate = ERROR_STATE();
-
-		IF (XACT_STATE()) = -1
-		BEGIN
+		IF @XState = -1
 			ROLLBACK TRANSACTION;
-		END
-		IF (XACT_STATE()) = 1
-		BEGIN
-			COMMIT TRANSACTION;
-		END
+		IF @XState = 1 and @xct = 0
+            ROLLBACK TRANSACTION;
+        IF @XState = 1 and @xct > 0
+			ROLLBACK TRANSACTION @job;
+
+		SET @msg = 'SP ' + @job + ' Error(' + Cast(Error_Number() AS varchar(10)) + '): ' + Error_Message();
 
 		-- exec MCM_Error_Handler @msg, @id_num, @job;
 		RAISERROR(N'%s', @errorseverity, @errorstate, @msg);

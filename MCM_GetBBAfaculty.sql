@@ -1,11 +1,11 @@
-/*
-not ready for primte time - placeholder - stick a pin in it
+-- /*
+-- not ready for prime time - placeholder - stick a pin in it
 
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-CREATE PROCEDURE [dbo].[MCM_GetBBAcourses](
+CREATE PROCEDURE [dbo].[MCM_GetBBAfaculty](
     @daysago int
 )
 
@@ -109,7 +109,7 @@ END
 
 ;
 GO
-*/
+/*
 with
 cte_cal_term as
 (
@@ -173,3 +173,4 @@ cte_cal_subterm as
  )
  -- select * from cte_cal order by TRM_BEGIN_DTE,TRM_END_DTE
  ,
+*/
