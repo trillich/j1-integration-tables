@@ -34,8 +34,9 @@ cteStuCur as (
         inner join
         DEGREE_HISTORY dh with (nolock)
             on sch.ID_NUM = dh.ID_NUM and sch.STUD_DIV = dh.DIV_CDE
-    where (sch.YR_CDE = @curyr)
+    where (sch.YR_CDE in (@curyr,@nxtyr))
         and sch.TRANSACTION_STS IN ('C', 'H', 'D')
+        and dh.CUR_DEGREE = 'Y'
 )
 ,
 cteAdm as (
@@ -59,26 +60,24 @@ cteAdm as (
 cteEmpl as (
     -- current employees
     SELECT DISTINCT
-        ID_NUM
-    FROM
-        EMPL_MAST emp with (nolock) -- FIXME is this the canonical place for employees?
-    WHERE
-        emp.TERMINATION_DTE is null or emp.TERMINATION_DTE > getdate()
-)
-,
-cteOPT as (
-    -- optional practice training OPT students
-    --  or fitness center FITA folks
-    SELECT
         ID_NUM,
-        ATTRIB_CDE,
-        ATTRIB_END_DATE
+        case
+            when inv.text like '%Faculty%'
+            then 'faculty'
+            when emp.emp_involvement in ( 'STAFF','ADM' )
+            then 'staff'
+            else ''
+        END                     affiliation,
+        emp_involvement
     FROM
-        ATTRIBUTE_TRANS attr with (nolock)
+        NAME_MASTER_UDF emp with (nolock)
+        LEFT JOIN
+        MCM_INVOLVE inv with (nolock)
+            ON emp.EMP_INVOLVEMENT = inv.INVOLVE
     WHERE
-        attr.ATTRIB_CDE in ( 'OPT','FITA' ) -- FIXME wild ass guess here
-        and
-        (attr.ATTRIB_END_DATE is null or attr.ATTRIB_END_DATE > getdate())
+        (emp.EMP_TERM_DATE is null or emp.EMP_TERM_DATE > getdate())
+		and
+		isnull(emp.emp_involvement,'') <> ''
 )
 ,
 cte_Pop as (
@@ -90,9 +89,6 @@ cte_Pop as (
     UNION
 	SELECT ID_NUM
 	FROM cteAdm
-    UNION
-    SELECT ID_NUM
-    FROM cteOPT
 )
 -- select * from cte_pop order by ID_NUM;
 ,
@@ -119,12 +115,18 @@ cte_bio as (
         nm.ID_NUM,
         nm.FIRST_NAME,
         nm.LAST_NAME,
-        bm.GENDER
+        bm.GENDER,
+        bmudf.card_no,
+		bmudf.mobile_no,
+		bmudf.mobile_swipe
     FROM
         NameMaster nm with (nolock)
         JOIN
         BIOGRAPH_MASTER bm with (nolock)
             on nm.ID_NUM = bm.ID_NUM
+        LEFT JOIN
+        biograph_master_udf bmudf with (nolock)
+            on nm.ID_NUM = bmudf.ID_NUM
     WHERE
         nm.ID_NUM in ( select id_num from cte_pop )
 )
@@ -148,51 +150,38 @@ select
     bio.LAST_NAME               lastname,
     email.email                 merrimack_email,
     email.beg_date,
-    'FIXME'                     card_swipe,
+    bio.card_no,
+	bio.mobile_no,
+	bio.mobile_swipe,
     pop.ID_NUM                  merrimack_id,
     pop.ID_NUM                  unique_id,
     email.username              user_name,
     case
         when pop.ID_NUM in (
-            SELECT
-                ID_NUM
-            FROM
-                ATTRIBUTE_TRANS attr with (nolock)
-            WHERE
-                attr.ATTRIB_CDE in ( 'FITD' ) -- FIXME wild ass guess here
-                and
-                (attr.ATTRIB_END_DATE is null or attr.ATTRIB_END_DATE > getdate())
-        )
-        then 'denied'
-        when pop.ID_NUM in (
             select ID_NUM
             from cteEmpl
-            -- CX: where involvement code NOT in FAC|ADJ|GADJ|EADJ|REML|MEML FIXME
+            where affiliation = 'staff'
         )
         then 'staff'
         when pop.ID_NUM in (
             select ID_NUM
             from cteEmpl
-            -- CX: where involvement code in FAC|ADJ|GADJ|EADJ|REML|MEML FIXME
+            where affiliation = 'faculty'
         )
         then 'faculty'
         when pop.ID_NUM in (
             select ID_NUM
             from cte_acad
             where EXIT_DTE is null or EXIT_DTE > getdate()
-                UNION
-            select ID_NUM
-            from cteOPT
-            where ATTRIB_CDE='OPT' and (ATTRIB_END_DATE is null or ATTRIB_END_DATE > getdate())
         )
         then 'student'
-        when pop.ID_NUM in (
-            select ID_NUM
-            from cteOPT
-            where ATTRIB_CDE='FITA' and (ATTRIB_END_DATE is null or ATTRIB_END_DATE > getdate())
-        )
-        then 'other'
-        else '?'
+        -- when pop.ID_NUM in (
+        --     select ID_NUM
+        --     from cteOPT
+        --     where ATTRIB_CDE='FITA' and (ATTRIB_END_DATE is null or ATTRIB_END_DATE > getdate())
+        -- )
+        -- then 'other'
+        else 'denied'
         END                     affiliation,
     bio.GENDER                  gender,
     acad.EXPECT_GRAD_YR         class_year
@@ -211,6 +200,7 @@ from
 ORDER BY
     pop.ID_NUM
 ;
+
 
     set nocount off;
     REVERT
