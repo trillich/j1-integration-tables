@@ -186,7 +186,7 @@ select
     email.email,
     pop.ID_NUM              user_name,
     pop.DIV_CDE             prog,
-    'FIXME'                 card_id, -- 'swipe'
+    'FIXME'                 card_id, -- 'swipe' ... biographMaster_udf.card_swipe? maybe
     bio.FIRST_NAME,
     bio.LAST_NAME,
     bio.MIDDLE_NAME,
