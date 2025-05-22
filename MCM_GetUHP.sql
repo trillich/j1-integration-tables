@@ -115,7 +115,7 @@ cte_online as (
     FROM
         STUDENT_MASTER WITH (nolock)
     WHERE
-        UDEF_1A_4 > ''
+        UDEF_1A_4 in ('X','O','P') -- better than what it has been: UDEF_1A_4 > ''
         and
         id_num in ( select id_num from cte_reg_stu ) -- FIXME?
         -- primary key for student_master involves FOUR fields: 
@@ -212,6 +212,7 @@ ORDER BY
     bio.FIRST_NAME
 -- ) x
     ;
+
 
 
     set nocount off;
